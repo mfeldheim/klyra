@@ -2477,3 +2477,763 @@ git commit -m "feat: add Kubernetes monitor module"
 ---
 
 *Section 3 complete. Continuing in Section 4 — Action module, leader election, HTTP server, CLI.*
+
+---
+
+## Section 4 — HTTP Action, Leader Election, HTTP Server, CLI
+
+---
+
+### Task 16: HTTP action module (ntfy.sh compatible)
+
+**Files:**
+- Create: `internal/action/http/http.go`
+- Create: `internal/action/http/http_test.go`
+
+- [ ] **Step 1: Write failing test**
+
+```go
+// internal/action/http/http_test.go
+package httpaction_test
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	httpaction "github.com/mfeldheim/klyra/internal/action/http"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func TestHTTPActionFiresWithNtfyHeaders(t *testing.T) {
+	var gotReq *http.Request
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	a, err := httpaction.New("notify", map[string]any{
+		"url":    srv.URL,
+		"method": "POST",
+		"auth": map[string]any{
+			"type":  "bearer",
+			"token": "mytoken",
+		},
+		"ntfy": map[string]any{
+			"priority": "high",
+			"tags":     []any{"warning", "k8s"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	ev := state.AlarmEvent{
+		MonitorName: "test-monitor",
+		Transition:  state.TransitionFiring,
+		Message:     "replica count low",
+		Value:       float64(1),
+		FiredAt:     now,
+	}
+	if err := a.Fire(context.Background(), ev); err != nil {
+		t.Fatal(err)
+	}
+
+	if gotReq.Header.Get("Authorization") != "Bearer mytoken" {
+		t.Errorf("expected Bearer auth, got %s", gotReq.Header.Get("Authorization"))
+	}
+	if gotReq.Header.Get("X-Priority") != "high" {
+		t.Errorf("expected X-Priority high, got %s", gotReq.Header.Get("X-Priority"))
+	}
+	if gotReq.Header.Get("X-Tags") != "warning,k8s" {
+		t.Errorf("expected X-Tags warning,k8s, got %s", gotReq.Header.Get("X-Tags"))
+	}
+	if gotReq.Header.Get("X-Title") != "test-monitor" {
+		t.Errorf("expected X-Title test-monitor, got %s", gotReq.Header.Get("X-Title"))
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(gotBody, &payload); err != nil {
+		t.Fatalf("invalid JSON body: %v", err)
+	}
+	if payload["status"] != "FIRING" {
+		t.Errorf("expected status FIRING, got %v", payload["status"])
+	}
+}
+```
+
+- [ ] **Step 2: Run — expect compile failure**
+
+```bash
+go test ./internal/action/http/... 2>&1 | head -5
+```
+
+- [ ] **Step 3: Implement http.go**
+
+```go
+// internal/action/http/http.go
+package httpaction
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/mfeldheim/klyra/internal/action"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func init() {
+	action.Register("http", New)
+}
+
+type HTTPAction struct {
+	name     string
+	url      string
+	method   string
+	token    string
+	priority string
+	tags     []string
+	client   *http.Client
+}
+
+func New(name string, cfg map[string]any) (action.Action, error) {
+	rawURL, _ := cfg["url"].(string)
+	if rawURL == "" {
+		return nil, fmt.Errorf("http action %q: url is required", name)
+	}
+	method := "POST"
+	if m, ok := cfg["method"].(string); ok && m != "" {
+		method = m
+	}
+	var token string
+	if auth, ok := cfg["auth"].(map[string]any); ok {
+		token, _ = auth["token"].(string)
+	}
+	var priority string
+	var tags []string
+	if ntfy, ok := cfg["ntfy"].(map[string]any); ok {
+		priority, _ = ntfy["priority"].(string)
+		if rawTags, ok := ntfy["tags"].([]any); ok {
+			for _, t := range rawTags {
+				tags = append(tags, fmt.Sprintf("%v", t))
+			}
+		}
+	}
+	return &HTTPAction{
+		name:     name,
+		url:      rawURL,
+		method:   method,
+		token:    token,
+		priority: priority,
+		tags:     tags,
+		client:   &http.Client{Timeout: 10 * time.Second},
+	}, nil
+}
+
+func (a *HTTPAction) Name() string { return a.name }
+
+func (a *HTTPAction) Fire(ctx context.Context, ev state.AlarmEvent) error {
+	payload := map[string]any{
+		"monitor":  ev.MonitorName,
+		"status":   string(ev.Transition),
+		"message":  ev.Message,
+		"value":    fmt.Sprintf("%v", ev.Value),
+		"fired_at": ev.FiredAt.Format(time.RFC3339),
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(ctx, a.method, a.url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if a.token != "" {
+		req.Header.Set("Authorization", "Bearer "+a.token)
+	}
+	if a.priority != "" {
+		req.Header.Set("X-Priority", a.priority)
+	}
+	if len(a.tags) > 0 {
+		req.Header.Set("X-Tags", strings.Join(a.tags, ","))
+	}
+	req.Header.Set("X-Title", ev.MonitorName)
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("action %q: server returned %d", a.name, resp.StatusCode)
+	}
+	return nil
+}
+```
+
+- [ ] **Step 4: Run tests — expect pass**
+
+```bash
+go test ./internal/action/http/... -v
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/action/http/
+git commit -m "feat: add HTTP action module with ntfy.sh support"
+```
+
+---
+
+### Task 17: Leader election
+
+**Files:**
+- Create: `internal/leader/election.go`
+
+- [ ] **Step 1: Implement election.go**
+
+```go
+// internal/leader/election.go
+package leader
+
+import (
+	"context"
+	"log"
+	"os"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
+)
+
+// Run acquires a Kubernetes Lease lock and calls onStartedLeading while the
+// pod holds the lease. onStoppedLeading is called when the lease is lost.
+// Returns when ctx is cancelled.
+func Run(ctx context.Context, client kubernetes.Interface, namespace, leaseName string,
+	onStartedLeading func(ctx context.Context),
+	onStoppedLeading func(),
+) {
+	id, _ := os.Hostname()
+
+	lock := &resourcelock.LeaseLock{
+		LeaseMeta: metav1.ObjectMeta{
+			Name:      leaseName,
+			Namespace: namespace,
+		},
+		Client: client.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity: id,
+		},
+	}
+
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:            lock,
+		ReleaseOnCancel: true,
+		LeaseDuration:   15 * time.Second,
+		RenewDeadline:   10 * time.Second,
+		RetryPeriod:     2 * time.Second,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: onStartedLeading,
+			OnStoppedLeading: func() {
+				log.Println("leader: lost lease")
+				onStoppedLeading()
+			},
+			OnNewLeader: func(identity string) {
+				if identity != id {
+					log.Printf("leader: current leader is %s", identity)
+				}
+			},
+		},
+	})
+}
+```
+
+- [ ] **Step 2: Verify compile**
+
+```bash
+go build ./...
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add internal/leader/election.go
+git commit -m "feat: add leader election via Kubernetes Lease"
+```
+
+---
+
+### Task 18: HTTP API handlers
+
+**Files:**
+- Create: `internal/server/handlers.go`
+- Create: `internal/server/handlers_test.go`
+
+- [ ] **Step 1: Write failing tests**
+
+```go
+// internal/server/handlers_test.go
+package server_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mfeldheim/klyra/internal/config"
+	"github.com/mfeldheim/klyra/internal/server"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func makeStore() *state.Store {
+	st := state.NewStore()
+	st.SetAlarm(state.AlarmState{MonitorName: "test", Status: state.AlarmOK, LastCheck: time.Now()})
+	return st
+}
+
+func makeCfg() *config.Config {
+	return &config.Config{
+		Monitors: []config.MonitorConfig{{Name: "test", Type: "http"}},
+	}
+}
+
+func TestStatusHandler(t *testing.T) {
+	h := server.NewHandlers(makeStore(), makeCfg())
+	req := httptest.NewRequest("GET", "/api/status", nil)
+	w := httptest.NewRecorder()
+	h.Status(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if _, ok := resp["alarms"]; !ok {
+		t.Error("expected alarms key in response")
+	}
+}
+
+func TestHistoryHandler(t *testing.T) {
+	st := makeStore()
+	st.AppendHistory(state.HistoryEvent{MonitorName: "test", Transition: state.TransitionFiring, At: time.Now()})
+	h := server.NewHandlers(st, makeCfg())
+	req := httptest.NewRequest("GET", "/api/history", nil)
+	w := httptest.NewRecorder()
+	h.History(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var events []any
+	json.NewDecoder(w.Body).Decode(&events)
+	if len(events) != 1 {
+		t.Errorf("expected 1 event, got %d", len(events))
+	}
+}
+
+func TestCreateSilenceHandler(t *testing.T) {
+	h := server.NewHandlers(makeStore(), makeCfg())
+	body := `{"monitor":"test","duration":"1h","reason":"maintenance"}`
+	req := httptest.NewRequest("POST", "/api/silences", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.CreateSilence(w, req)
+
+	if w.Code != 201 {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+}
+```
+
+- [ ] **Step 2: Run — expect compile failure**
+
+```bash
+go test ./internal/server/... 2>&1 | head -5
+```
+
+- [ ] **Step 3: Implement handlers.go**
+
+```go
+// internal/server/handlers.go
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/mfeldheim/klyra/internal/config"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+type Handlers struct {
+	store *state.Store
+	cfg   *config.Config
+}
+
+func NewHandlers(st *state.Store, cfg *config.Config) *Handlers {
+	return &Handlers{store: st, cfg: cfg}
+}
+
+func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"alarms":    h.store.Alarms(),
+		"updatedAt": time.Now(),
+	})
+}
+
+func (h *Handlers) History(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.store.History())
+}
+
+func (h *Handlers) Config(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.cfg)
+}
+
+func (h *Handlers) Silences(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.store.Silences())
+}
+
+type createSilenceRequest struct {
+	Monitor  string `json:"monitor"`
+	Duration string `json:"duration"`
+	Reason   string `json:"reason"`
+}
+
+func (h *Handlers) CreateSilence(w http.ResponseWriter, r *http.Request) {
+	var req createSilenceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	dur, err := time.ParseDuration(req.Duration)
+	if err != nil {
+		http.Error(w, "invalid duration", http.StatusBadRequest)
+		return
+	}
+	sl := state.Silence{
+		ID:          uuid.NewString(),
+		MonitorName: req.Monitor,
+		Until:       time.Now().Add(dur),
+		Reason:      req.Reason,
+	}
+	h.store.AddSilence(sl)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(sl)
+}
+
+func (h *Handlers) DeleteSilence(w http.ResponseWriter, r *http.Request) {
+	// Extract ID from path: DELETE /api/silences/{id}
+	id := strings.TrimPrefix(r.URL.Path, "/api/silences/")
+	if id == "" {
+		http.Error(w, "missing silence id", http.StatusBadRequest)
+		return
+	}
+	if !h.store.RemoveSilence(id) {
+		http.Error(w, "silence not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+```
+
+- [ ] **Step 4: Add uuid dependency**
+
+```bash
+go get github.com/google/uuid
+go mod tidy
+```
+
+- [ ] **Step 5: Run tests — expect pass**
+
+```bash
+go test ./internal/server/... -v
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add internal/server/handlers.go internal/server/handlers_test.go go.mod go.sum
+git commit -m "feat: add HTTP API handlers"
+```
+
+---
+
+### Task 19: HTTP server with SPA fallback
+
+**Files:**
+- Create: `internal/server/server.go`
+
+- [ ] **Step 1: Implement server.go**
+
+```go
+// internal/server/server.go
+package server
+
+import (
+	"io/fs"
+	"log"
+	"net/http"
+)
+
+type Server struct {
+	handlers *Handlers
+	uiFS     fs.FS // nil until UI is embedded
+}
+
+func New(h *Handlers, uiFS fs.FS) *Server {
+	return &Server{handlers: h, uiFS: uiFS}
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/api/status", s.handlers.Status)
+	mux.HandleFunc("/api/history", s.handlers.History)
+	mux.HandleFunc("/api/config", s.handlers.Config)
+	mux.HandleFunc("/api/silences", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			s.handlers.Silences(w, r)
+		case http.MethodPost:
+			s.handlers.CreateSilence(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/silences/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			s.handlers.DeleteSilence(w, r)
+		} else {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	if s.uiFS != nil {
+		fileServer := http.FileServer(http.FS(s.uiFS))
+		mux.Handle("/", spaHandler{fileServer: fileServer, uiFS: s.uiFS})
+	}
+
+	return mux
+}
+
+func (s *Server) ListenAndServe(addr string) error {
+	log.Printf("server: listening on %s", addr)
+	return http.ListenAndServe(addr, s.Handler())
+}
+
+// spaHandler serves static files and falls back to index.html for SPA routing.
+type spaHandler struct {
+	fileServer http.Handler
+	uiFS       fs.FS
+}
+
+func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	_, err := h.uiFS.Open(r.URL.Path)
+	if err != nil {
+		// File not found — serve index.html for client-side routing
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/"
+		h.fileServer.ServeHTTP(w, r2)
+		return
+	}
+	h.fileServer.ServeHTTP(w, r)
+}
+```
+
+- [ ] **Step 2: Verify compile**
+
+```bash
+go build ./...
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add internal/server/server.go
+git commit -m "feat: add HTTP server with SPA fallback"
+```
+
+---
+
+### Task 20: CLI entrypoint (cobra)
+
+**Files:**
+- Create: `cmd/root.go`
+- Update: `main.go`
+
+- [ ] **Step 1: Add cobra dependency**
+
+```bash
+go get github.com/spf13/cobra
+go mod tidy
+```
+
+- [ ] **Step 2: Implement cmd/root.go**
+
+```go
+// cmd/root.go
+package cmd
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/spf13/cobra"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
+	_ "github.com/mfeldheim/klyra/internal/action/http"
+	_ "github.com/mfeldheim/klyra/internal/monitor/http"
+	_ "github.com/mfeldheim/klyra/internal/monitor/kubernetes"
+	_ "github.com/mfeldheim/klyra/internal/monitor/prometheus"
+
+	"github.com/mfeldheim/klyra/internal/config"
+	"github.com/mfeldheim/klyra/internal/engine"
+	"github.com/mfeldheim/klyra/internal/leader"
+	"github.com/mfeldheim/klyra/internal/server"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+var (
+	flagConfigPath string
+	flagAddr       string
+	flagNamespace  string
+	flagLeaseName  string
+	flagKubeconfig string
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "klyra",
+	Short: "Kubernetes monitoring tool",
+	RunE:  run,
+}
+
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func init() {
+	rootCmd.Flags().StringVar(&flagConfigPath, "config", "/etc/klyra/config.yaml", "path to config file")
+	rootCmd.Flags().StringVar(&flagAddr, "addr", ":8080", "HTTP listen address")
+	rootCmd.Flags().StringVar(&flagNamespace, "namespace", "default", "Kubernetes namespace")
+	rootCmd.Flags().StringVar(&flagLeaseName, "lease-name", "klyra-leader", "leader election lease name")
+	rootCmd.Flags().StringVar(&flagKubeconfig, "kubeconfig", "", "path to kubeconfig (empty = in-cluster)")
+}
+
+func run(cmd *cobra.Command, args []string) error {
+	f, err := os.Open(flagConfigPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	cfg, err := config.Load(f)
+	if err != nil {
+		return err
+	}
+
+	k8sClient, err := buildK8sClient(flagKubeconfig)
+	if err != nil {
+		return err
+	}
+
+	st := state.NewStore()
+
+	// Load persisted state from ConfigMap on startup
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := engine.LoadFromConfigMap(ctx, st, k8sClient, flagNamespace, "klyra-state"); err != nil {
+		log.Printf("warning: could not load persisted state: %v", err)
+	}
+
+	// Start HTTP server (all replicas)
+	h := server.NewHandlers(st, cfg)
+	srv := server.New(h, nil) // UI fs injected at build time via embed.go
+	go func() {
+		if err := srv.ListenAndServe(flagAddr); err != nil {
+			log.Printf("server error: %v", err)
+		}
+	}()
+
+	// Leader election — only leader runs engine
+	eng, err := engine.New(cfg, st, k8sClient, flagNamespace)
+	if err != nil {
+		return err
+	}
+
+	leader.Run(ctx, k8sClient, flagNamespace, flagLeaseName,
+		func(leaderCtx context.Context) {
+			log.Println("leader: starting engine")
+			if err := eng.Run(leaderCtx); err != nil {
+				log.Printf("engine error: %v", err)
+			}
+		},
+		func() { log.Println("leader: engine stopped") },
+	)
+
+	return nil
+}
+
+func buildK8sClient(kubeconfig string) (kubernetes.Interface, error) {
+	var restCfg *rest.Config
+	var err error
+	if kubeconfig != "" {
+		restCfg, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	} else {
+		restCfg, err = rest.InClusterConfig()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.NewForConfig(restCfg)
+}
+```
+
+- [ ] **Step 3: Verify compile**
+
+```bash
+go build ./...
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add cmd/root.go go.mod go.sum
+git commit -m "feat: add CLI entrypoint with leader election and engine wiring"
+```
+
+---
+
+*Section 4 complete. Continuing in Section 5 — React UI.*
