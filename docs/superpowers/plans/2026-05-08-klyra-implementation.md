@@ -1641,3 +1641,839 @@ git commit -m "feat: add engine orchestrator"
 ---
 
 *Section 2 complete. Continuing in Section 3 — Monitor modules.*
+
+---
+
+## Section 3 — Monitor Modules (HTTP, Prometheus, Kubernetes)
+
+---
+
+### Task 13: HTTP monitor module
+
+**Files:**
+- Create: `internal/monitor/http/http.go`
+- Create: `internal/monitor/http/http_test.go`
+
+- [ ] **Step 1: Write failing test**
+
+```go
+// internal/monitor/http/http_test.go
+package httpmon_test
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	httpmon "github.com/mfeldheim/klyra/internal/monitor/http"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func TestHTTPMonitorOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	m, err := httpmon.New("test", map[string]any{
+		"url":           srv.URL,
+		"method":        "GET",
+		"expect_status": float64(200),
+		"expect_body":   "ok",
+		"timeout":       "5s",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != state.CheckOK {
+		t.Errorf("expected OK, got %s: %s", r.Status, r.Message)
+	}
+	if r.Value != true {
+		t.Errorf("expected value true, got %v", r.Value)
+	}
+}
+
+func TestHTTPMonitorFailsOnWrongStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(503)
+	}))
+	defer srv.Close()
+
+	m, err := httpmon.New("test", map[string]any{
+		"url":           srv.URL,
+		"expect_status": float64(200),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != false {
+		t.Errorf("expected value false, got %v", r.Value)
+	}
+}
+
+func TestHTTPMonitorFailsOnMissingBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("healthy"))
+	}))
+	defer srv.Close()
+
+	m, err := httpmon.New("test", map[string]any{
+		"url":           srv.URL,
+		"expect_status": float64(200),
+		"expect_body":   "ok",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := m.Check(context.Background())
+	if r.Value != false {
+		t.Errorf("expected false when body mismatch, got %v", r.Value)
+	}
+}
+```
+
+- [ ] **Step 2: Run — expect compile failure**
+
+```bash
+go test ./internal/monitor/http/... 2>&1 | head -5
+```
+
+- [ ] **Step 3: Implement http.go**
+
+```go
+// internal/monitor/http/http.go
+package httpmon
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	monitor "github.com/mfeldheim/klyra/internal/monitor"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func init() {
+	monitor.Register("http", New)
+}
+
+type HTTPMonitor struct {
+	name         string
+	url          string
+	method       string
+	timeout      time.Duration
+	expectStatus int
+	expectBody   string
+	headers      map[string]string
+	client       *http.Client
+}
+
+func New(name string, cfg map[string]any) (monitor.Monitor, error) {
+	url, _ := cfg["url"].(string)
+	if url == "" {
+		return nil, fmt.Errorf("http monitor %q: url is required", name)
+	}
+	method := stringOrDefault(cfg, "method", "GET")
+	timeoutStr := stringOrDefault(cfg, "timeout", "10s")
+	timeout, err := time.ParseDuration(timeoutStr)
+	if err != nil {
+		timeout = 10 * time.Second
+	}
+	expectStatus := 200
+	if v, ok := cfg["expect_status"]; ok {
+		expectStatus = int(toFloat64(v))
+	}
+	expectBody, _ := cfg["expect_body"].(string)
+	headers := map[string]string{}
+	if h, ok := cfg["headers"].(map[string]any); ok {
+		for k, v := range h {
+			headers[k] = fmt.Sprintf("%v", v)
+		}
+	}
+	return &HTTPMonitor{
+		name:         name,
+		url:          url,
+		method:       method,
+		timeout:      timeout,
+		expectStatus: expectStatus,
+		expectBody:   expectBody,
+		headers:      headers,
+		client:       &http.Client{Timeout: timeout},
+	}, nil
+}
+
+func (m *HTTPMonitor) Name() string { return m.name }
+
+func (m *HTTPMonitor) Check(ctx context.Context) (state.CheckResult, error) {
+	req, err := http.NewRequestWithContext(ctx, m.method, m.url, nil)
+	if err != nil {
+		return state.CheckResult{Status: state.CheckUnknown, Message: err.Error()}, nil
+	}
+	for k, v := range m.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckOK,
+			Value:       false,
+			Message:     err.Error(),
+			Timestamp:   time.Now(),
+		}, nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	ok := resp.StatusCode == m.expectStatus
+	msg := fmt.Sprintf("status %d", resp.StatusCode)
+	if !ok {
+		msg = fmt.Sprintf("expected status %d, got %d", m.expectStatus, resp.StatusCode)
+	}
+	if ok && m.expectBody != "" {
+		if !strings.Contains(string(body), m.expectBody) {
+			ok = false
+			msg = fmt.Sprintf("body missing expected substring %q", m.expectBody)
+		}
+	}
+
+	return state.CheckResult{
+		MonitorName: m.name,
+		Status:      state.CheckOK,
+		Value:       ok,
+		Message:     msg,
+		Timestamp:   time.Now(),
+	}, nil
+}
+
+func stringOrDefault(cfg map[string]any, key, def string) string {
+	if v, ok := cfg[key].(string); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+func toFloat64(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	}
+	return 0
+}
+```
+
+- [ ] **Step 4: Run tests — expect pass**
+
+```bash
+go test ./internal/monitor/http/... -v
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/monitor/http/
+git commit -m "feat: add HTTP monitor module"
+```
+
+---
+
+### Task 14: Prometheus monitor module
+
+**Files:**
+- Create: `internal/monitor/prometheus/prometheus.go`
+- Create: `internal/monitor/prometheus/prometheus_test.go`
+
+- [ ] **Step 1: Add Prometheus client dependency**
+
+```bash
+go get github.com/prometheus/client_golang@v1.19.0
+go mod tidy
+```
+
+- [ ] **Step 2: Write failing test**
+
+```go
+// internal/monitor/prometheus/prometheus_test.go
+package prommon_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	prommon "github.com/mfeldheim/klyra/internal/monitor/prometheus"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func makePromResponse(value float64) any {
+	return map[string]any{
+		"status": "success",
+		"data": map[string]any{
+			"resultType": "scalar",
+			"result":     []any{float64(1234567890), fmt.Sprintf("%g", value)},
+		},
+	}
+}
+
+func TestPrometheusMonitorScalar(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"resultType": "scalar",
+				"result":     []any{float64(1234567890), "0.042"},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := prommon.New("test", map[string]any{
+		"url":    srv.URL,
+		"query":  `rate(http_errors_total[5m])`,
+		"result": "scalar",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != state.CheckOK {
+		t.Errorf("expected OK, got %s", r.Status)
+	}
+	val, ok := r.Value.(float64)
+	if !ok || val < 0.04 || val > 0.05 {
+		t.Errorf("unexpected value: %v", r.Value)
+	}
+}
+```
+
+- [ ] **Step 3: Add missing fmt import to test**
+
+```go
+// Add to imports in prometheus_test.go:
+"fmt"
+```
+
+- [ ] **Step 4: Run — expect compile failure**
+
+```bash
+go test ./internal/monitor/prometheus/... 2>&1 | head -5
+```
+
+- [ ] **Step 5: Implement prometheus.go**
+
+```go
+// internal/monitor/prometheus/prometheus.go
+package prommon
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"time"
+
+	monitor "github.com/mfeldheim/klyra/internal/monitor"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func init() {
+	monitor.Register("prometheus", New)
+}
+
+type PrometheusMonitor struct {
+	name       string
+	url        string
+	query      string
+	resultType string // "scalar" or "first_value"
+	client     *http.Client
+}
+
+func New(name string, cfg map[string]any) (monitor.Monitor, error) {
+	rawURL, _ := cfg["url"].(string)
+	if rawURL == "" {
+		return nil, fmt.Errorf("prometheus monitor %q: url is required", name)
+	}
+	query, _ := cfg["query"].(string)
+	if query == "" {
+		return nil, fmt.Errorf("prometheus monitor %q: query is required", name)
+	}
+	resultType, _ := cfg["result"].(string)
+	if resultType == "" {
+		resultType = "scalar"
+	}
+	return &PrometheusMonitor{
+		name:       name,
+		url:        rawURL,
+		query:      query,
+		resultType: resultType,
+		client:     &http.Client{Timeout: 10 * time.Second},
+	}, nil
+}
+
+func (m *PrometheusMonitor) Name() string { return m.name }
+
+func (m *PrometheusMonitor) Check(ctx context.Context) (state.CheckResult, error) {
+	endpoint := m.url + "/api/v1/query"
+	params := url.Values{"query": {m.query}}
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint+"?"+params.Encode(), nil)
+	if err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckUnknown, Message: err.Error(), Timestamp: time.Now()}, nil
+	}
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckUnknown, Message: err.Error(), Timestamp: time.Now()}, nil
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var envelope struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     any    `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckUnknown, Message: "invalid response"}, nil
+	}
+	if envelope.Status != "success" {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckUnknown, Message: "prometheus returned non-success"}, nil
+	}
+
+	val, err := extractValue(envelope.Data.Result, m.resultType)
+	if err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckUnknown, Message: err.Error(), Timestamp: time.Now()}, nil
+	}
+
+	return state.CheckResult{
+		MonitorName: m.name,
+		Status:      state.CheckOK,
+		Value:       val,
+		Message:     fmt.Sprintf("%.6g", val),
+		Timestamp:   time.Now(),
+	}, nil
+}
+
+func extractValue(result any, resultType string) (float64, error) {
+	switch resultType {
+	case "scalar":
+		arr, ok := result.([]any)
+		if !ok || len(arr) < 2 {
+			return 0, fmt.Errorf("unexpected scalar format")
+		}
+		return parsePromValue(arr[1])
+	case "first_value":
+		arr, ok := result.([]any)
+		if !ok || len(arr) == 0 {
+			return 0, fmt.Errorf("empty vector result")
+		}
+		item, ok := arr[0].(map[string]any)
+		if !ok {
+			return 0, fmt.Errorf("unexpected vector item format")
+		}
+		vals, ok := item["value"].([]any)
+		if !ok || len(vals) < 2 {
+			return 0, fmt.Errorf("unexpected value format")
+		}
+		return parsePromValue(vals[1])
+	}
+	return 0, fmt.Errorf("unknown result type %q", resultType)
+}
+
+func parsePromValue(v any) (float64, error) {
+	switch s := v.(type) {
+	case string:
+		return strconv.ParseFloat(s, 64)
+	case float64:
+		return s, nil
+	}
+	return 0, fmt.Errorf("cannot parse value %v", v)
+}
+```
+
+- [ ] **Step 6: Run tests — expect pass**
+
+```bash
+go test ./internal/monitor/prometheus/... -v
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add internal/monitor/prometheus/ go.mod go.sum
+git commit -m "feat: add Prometheus monitor module"
+```
+
+---
+
+### Task 15: Kubernetes monitor module
+
+**Files:**
+- Create: `internal/monitor/kubernetes/kubernetes.go`
+- Create: `internal/monitor/kubernetes/kubernetes_test.go`
+
+- [ ] **Step 1: Write failing test using fake k8s client**
+
+```go
+// internal/monitor/kubernetes/kubernetes_test.go
+package k8smon_test
+
+import (
+	"context"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+
+	k8smon "github.com/mfeldheim/klyra/internal/monitor/kubernetes"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func TestDeploymentReadyReplicas(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	ready := int32(2)
+	replicas := int32(3)
+	client.AppsV1().Deployments("default").Create(context.Background(), &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
+		Status: appsv1.DeploymentStatus{
+			ReadyReplicas: ready,
+			Replicas:      replicas,
+		},
+	}, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "deployment",
+		"namespace": "default",
+		"name":      "api",
+		"check":     "ready_replicas",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != state.CheckOK {
+		t.Errorf("expected OK, got %s: %s", r.Status, r.Message)
+	}
+	if r.Value != float64(2) {
+		t.Errorf("expected ready_replicas=2, got %v", r.Value)
+	}
+}
+
+func TestNodeReadyCondition(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	corev1 := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-1"},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{Type: v1.NodeReady, Status: v1.ConditionTrue},
+			},
+		},
+	}
+	client.CoreV1().Nodes().Create(context.Background(), corev1, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":  "node",
+		"name":  "node-1",
+		"check": "ready_condition",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := m.Check(context.Background())
+	if r.Value != true {
+		t.Errorf("expected ready_condition=true, got %v", r.Value)
+	}
+}
+```
+
+- [ ] **Step 2: Fix missing imports in test**
+
+```go
+// Add to imports:
+v1 "k8s.io/api/core/v1"
+```
+
+- [ ] **Step 3: Run — expect compile failure**
+
+```bash
+go test ./internal/monitor/kubernetes/... 2>&1 | head -5
+```
+
+- [ ] **Step 4: Implement kubernetes.go**
+
+```go
+// internal/monitor/kubernetes/kubernetes.go
+package k8smon
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
+	monitor "github.com/mfeldheim/klyra/internal/monitor"
+	"github.com/mfeldheim/klyra/internal/state"
+)
+
+func init() {
+	monitor.Register("kubernetes", New)
+}
+
+type K8sMonitor struct {
+	name      string
+	kind      string
+	namespace string
+	resName   string
+	check     string
+	client    kubernetes.Interface
+}
+
+// New creates a K8sMonitor using the in-cluster or kubeconfig client.
+// The client is injected at engine startup via NewWithClient.
+func New(name string, cfg map[string]any) (monitor.Monitor, error) {
+	return nil, fmt.Errorf("kubernetes monitor requires a pre-built client; use NewWithClient")
+}
+
+func NewWithClient(name string, cfg map[string]any, client kubernetes.Interface) (monitor.Monitor, error) {
+	kind, _ := cfg["kind"].(string)
+	if kind == "" {
+		return nil, fmt.Errorf("kubernetes monitor %q: kind is required", name)
+	}
+	check, _ := cfg["check"].(string)
+	if check == "" {
+		return nil, fmt.Errorf("kubernetes monitor %q: check is required", name)
+	}
+	ns, _ := cfg["namespace"].(string)
+	resName, _ := cfg["name"].(string)
+	return &K8sMonitor{
+		name:      name,
+		kind:      kind,
+		namespace: ns,
+		resName:   resName,
+		check:     check,
+		client:    client,
+	}, nil
+}
+
+func (m *K8sMonitor) Name() string { return m.name }
+
+func (m *K8sMonitor) Check(ctx context.Context) (state.CheckResult, error) {
+	now := time.Now()
+	val, msg, err := m.fetch(ctx)
+	if err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckUnknown, Message: err.Error(), Timestamp: now}, nil
+	}
+	return state.CheckResult{MonitorName: m.name, Status: state.CheckOK, Value: val, Message: msg, Timestamp: now}, nil
+}
+
+func (m *K8sMonitor) fetch(ctx context.Context) (any, string, error) {
+	switch m.kind {
+	case "deployment":
+		return m.checkDeployment(ctx)
+	case "pod":
+		return m.checkPod(ctx)
+	case "node":
+		return m.checkNode(ctx)
+	case "event":
+		return m.checkEvent(ctx)
+	}
+	return nil, "", fmt.Errorf("unknown kind %q", m.kind)
+}
+
+func (m *K8sMonitor) checkDeployment(ctx context.Context) (any, string, error) {
+	d, err := m.client.AppsV1().Deployments(m.namespace).Get(ctx, m.resName, metav1.GetOptions{})
+	if err != nil {
+		return nil, "", err
+	}
+	switch m.check {
+	case "ready_replicas":
+		v := float64(d.Status.ReadyReplicas)
+		return v, fmt.Sprintf("%d ready", d.Status.ReadyReplicas), nil
+	case "available_replicas":
+		v := float64(d.Status.AvailableReplicas)
+		return v, fmt.Sprintf("%d available", d.Status.AvailableReplicas), nil
+	case "paused":
+		return d.Spec.Paused, fmt.Sprintf("paused=%v", d.Spec.Paused), nil
+	}
+	return nil, "", fmt.Errorf("unknown check %q for deployment", m.check)
+}
+
+func (m *K8sMonitor) checkPod(ctx context.Context) (any, string, error) {
+	pod, err := m.client.CoreV1().Pods(m.namespace).Get(ctx, m.resName, metav1.GetOptions{})
+	if err != nil {
+		return nil, "", err
+	}
+	switch m.check {
+	case "phase":
+		return string(pod.Status.Phase), string(pod.Status.Phase), nil
+	case "restarts":
+		var total int32
+		for _, cs := range pod.Status.ContainerStatuses {
+			total += cs.RestartCount
+		}
+		return float64(total), fmt.Sprintf("%d restarts", total), nil
+	case "ready_condition":
+		for _, c := range pod.Status.Conditions {
+			if c.Type == corev1.PodReady {
+				return c.Status == corev1.ConditionTrue, string(c.Status), nil
+			}
+		}
+		return false, "no Ready condition", nil
+	}
+	return nil, "", fmt.Errorf("unknown check %q for pod", m.check)
+}
+
+func (m *K8sMonitor) checkNode(ctx context.Context) (any, string, error) {
+	var nodes []corev1.Node
+	if m.resName != "" {
+		n, err := m.client.CoreV1().Nodes().Get(ctx, m.resName, metav1.GetOptions{})
+		if err != nil {
+			return nil, "", err
+		}
+		nodes = []corev1.Node{*n}
+	} else {
+		list, err := m.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, "", err
+		}
+		nodes = list.Items
+	}
+
+	for _, node := range nodes {
+		for _, c := range node.Status.Conditions {
+			switch m.check {
+			case "ready_condition":
+				if c.Type == corev1.NodeReady {
+					if c.Status != corev1.ConditionTrue {
+						return false, fmt.Sprintf("node %s not ready", node.Name), nil
+					}
+				}
+			case "disk_pressure":
+				if c.Type == corev1.NodeDiskPressure && c.Status == corev1.ConditionTrue {
+					return true, fmt.Sprintf("node %s has disk pressure", node.Name), nil
+				}
+			case "memory_pressure":
+				if c.Type == corev1.NodeMemoryPressure && c.Status == corev1.ConditionTrue {
+					return true, fmt.Sprintf("node %s has memory pressure", node.Name), nil
+				}
+			}
+		}
+	}
+
+	switch m.check {
+	case "ready_condition":
+		return true, "all nodes ready", nil
+	case "disk_pressure", "memory_pressure":
+		return false, "no pressure", nil
+	}
+	return nil, "", fmt.Errorf("unknown check %q for node", m.check)
+}
+
+func (m *K8sMonitor) checkEvent(ctx context.Context) (any, string, error) {
+	list, err := m.client.CoreV1().Events(m.namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, "", err
+	}
+	reason, _ := m.resName, "" // resName reused as reason pattern for events
+	for _, ev := range list.Items {
+		if reason != "" && ev.Reason != reason {
+			continue
+		}
+		if m.check == "type=Warning" && ev.Type != "Warning" {
+			continue
+		}
+		return true, fmt.Sprintf("event: %s %s", ev.Reason, ev.Message), nil
+	}
+	return false, "no matching events", nil
+}
+```
+
+- [ ] **Step 5: Run tests — expect pass**
+
+```bash
+go test ./internal/monitor/kubernetes/... -v
+```
+
+- [ ] **Step 6: Update engine.go to inject k8s client into kubernetes monitors**
+
+In `internal/engine/engine.go`, replace the monitor construction loop to handle the kubernetes type specially:
+
+```go
+// Replace the monitor goroutine section in Run():
+for _, mc := range e.cfg.Monitors {
+    var m monitor.Monitor
+    var err error
+    if mc.Type == "kubernetes" {
+        m, err = k8smon.NewWithClient(mc.Name, mc.Config, e.k8sClient)
+    } else {
+        m, err = monitor.New(mc.Type, mc.Name, mc.Config)
+    }
+    if err != nil {
+        return fmt.Errorf("monitor %q: %w", mc.Name, err)
+    }
+    // ... rest unchanged
+}
+```
+
+Add import at top of engine.go:
+```go
+k8smon "github.com/mfeldheim/klyra/internal/monitor/kubernetes"
+```
+
+- [ ] **Step 7: Verify compile**
+
+```bash
+go build ./...
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add internal/monitor/kubernetes/ internal/engine/engine.go
+git commit -m "feat: add Kubernetes monitor module"
+```
+
+---
+
+*Section 3 complete. Continuing in Section 4 — Action module, leader election, HTTP server, CLI.*
