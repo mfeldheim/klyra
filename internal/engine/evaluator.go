@@ -4,10 +4,16 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mfeldheim/klyra/internal/config"
 	"github.com/mfeldheim/klyra/internal/state"
 )
+
+// regexCache caches compiled regular expressions to avoid recompilation on
+// every EvaluateThreshold call (Bug 4).
+var regexCache sync.Map // map[string]*regexp.Regexp
 
 // toFloat converts numeric types to float64. Returns 0 for unsupported types.
 func toFloat(v any) float64 {
@@ -42,9 +48,18 @@ func EvaluateThreshold(thr config.ThresholdConfig, value any) bool {
 	case "contains":
 		return strings.Contains(fmt.Sprintf("%v", value), fmt.Sprintf("%v", thr.Value))
 	case "matches":
-		re, err := regexp.Compile(fmt.Sprintf("%v", thr.Value))
-		if err != nil {
-			return false
+		// Bug 4: cache compiled patterns instead of recompiling every call.
+		pattern := fmt.Sprintf("%v", thr.Value)
+		var re *regexp.Regexp
+		if cached, ok := regexCache.Load(pattern); ok {
+			re = cached.(*regexp.Regexp)
+		} else {
+			compiled, err := regexp.Compile(pattern)
+			if err != nil {
+				return false
+			}
+			regexCache.Store(pattern, compiled)
+			re = compiled
 		}
 		return re.MatchString(fmt.Sprintf("%v", value))
 	}
@@ -68,8 +83,9 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 		Message:      r.Message,
 	}
 
-	// Unknown status — clear pending, set unknown, no event.
-	if r.Status == state.CheckUnknown {
+	// Bug 3: CheckError (failed to run) and CheckUnknown both skip threshold
+	// evaluation and produce AlarmUnknown with no event.
+	if r.Status == state.CheckUnknown || r.Status == state.CheckError {
 		updated.Status = state.AlarmUnknown
 		updated.PendingSince = nil
 		st.SetAlarm(updated)
@@ -97,18 +113,28 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 			} else {
 				updated.Status = state.AlarmFiring
 			}
+		} else {
+			// Bug 1: condition met but for-duration not yet elapsed (pending).
+			// Persist a valid status rather than leaving it as the zero value.
+			updated.Status = state.AlarmOK
 		}
 	} else {
 		updated.PendingSince = nil
 		if current.Status == state.AlarmFiring {
 			updated.Status = state.AlarmOK
 			updated.FiredAt = nil
+			// Bug 2: FiredAt on a RESOLVED event should be the original fire
+			// time so callers can compute alarm duration, not the resolution time.
+			var origFiredAt time.Time
+			if current.FiredAt != nil {
+				origFiredAt = *current.FiredAt
+			}
 			event = &state.AlarmEvent{
 				MonitorName: r.MonitorName,
 				Transition:  state.TransitionResolved,
 				Message:     r.Message,
 				Value:       r.Value,
-				FiredAt:     now,
+				FiredAt:     origFiredAt,
 			}
 		} else {
 			updated.Status = state.AlarmOK
