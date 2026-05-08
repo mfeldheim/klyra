@@ -58,6 +58,9 @@ func TestHTTPMonitorFailsOnWrongStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if r.Status != state.CheckOK {
+		t.Errorf("expected status CheckOK, got %s: %s", r.Status, r.Message)
+	}
 	if r.Value != false {
 		t.Errorf("expected value false, got %v", r.Value)
 	}
@@ -80,6 +83,9 @@ func TestHTTPMonitorFailsOnMissingBody(t *testing.T) {
 	}
 
 	r, _ := m.Check(context.Background())
+	if r.Status != state.CheckOK {
+		t.Errorf("expected status CheckOK, got %s: %s", r.Status, r.Message)
+	}
 	if r.Value != false {
 		t.Errorf("expected false when body mismatch, got %v", r.Value)
 	}

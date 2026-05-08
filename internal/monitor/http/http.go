@@ -45,6 +45,7 @@ func New(name string, cfg map[string]any) (monitor.Monitor, error) {
 			method = s
 		}
 	}
+	method = strings.ToUpper(method)
 
 	// Optional: timeout (default "10s")
 	timeout := 10 * time.Second
@@ -107,13 +108,15 @@ func New(name string, cfg map[string]any) (monitor.Monitor, error) {
 func (m *httpMonitor) Name() string { return m.name }
 
 func (m *httpMonitor) Check(ctx context.Context) (state.CheckResult, error) {
+	now := time.Now()
+
 	req, err := http.NewRequestWithContext(ctx, m.method, m.url, nil)
 	if err != nil {
 		return state.CheckResult{
 			MonitorName: m.name,
-			Status:      state.CheckOK,
-			Value:       false,
-			Message:     fmt.Sprintf("failed to create request: %s", err.Error()),
+			Status:      state.CheckUnknown,
+			Message:     err.Error(),
+			Timestamp:   now,
 		}, nil
 	}
 
@@ -128,17 +131,19 @@ func (m *httpMonitor) Check(ctx context.Context) (state.CheckResult, error) {
 			Status:      state.CheckOK,
 			Value:       false,
 			Message:     fmt.Sprintf("request failed: %s", err.Error()),
+			Timestamp:   now,
 		}, nil
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return state.CheckResult{
 			MonitorName: m.name,
 			Status:      state.CheckOK,
 			Value:       false,
 			Message:     fmt.Sprintf("failed to read response body: %s", err.Error()),
+			Timestamp:   now,
 		}, nil
 	}
 
@@ -160,5 +165,6 @@ func (m *httpMonitor) Check(ctx context.Context) (state.CheckResult, error) {
 		Status:      state.CheckOK,
 		Value:       ok,
 		Message:     msg,
+		Timestamp:   now,
 	}, nil
 }
