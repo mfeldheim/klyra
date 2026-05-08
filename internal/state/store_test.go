@@ -1,6 +1,8 @@
 package state_test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,4 +60,83 @@ func TestStoreActiveSilences(t *testing.T) {
 	if s.IsSilenced("other") {
 		t.Error("expected other not to be silenced (expired)")
 	}
+}
+
+func TestStoreRemoveSilence(t *testing.T) {
+	s := state.NewStore()
+	s.AddSilence(state.Silence{ID: "s1", MonitorName: "test", Until: time.Now().Add(time.Hour)})
+
+	if !s.RemoveSilence("s1") {
+		t.Error("expected RemoveSilence to return true for existing ID")
+	}
+	if s.RemoveSilence("s1") {
+		t.Error("expected RemoveSilence to return false for already-removed ID")
+	}
+	if s.IsSilenced("test") {
+		t.Error("expected monitor to no longer be silenced after removal")
+	}
+}
+
+func TestStoreWildcardSilence(t *testing.T) {
+	s := state.NewStore()
+	s.AddSilence(state.Silence{ID: "all", MonitorName: "", Until: time.Now().Add(time.Hour)})
+
+	if !s.IsSilenced("anything") {
+		t.Error("expected wildcard silence to match any monitor")
+	}
+	if !s.IsSilenced("other") {
+		t.Error("expected wildcard silence to match other monitor")
+	}
+}
+
+func TestStoreGetAlarmMissing(t *testing.T) {
+	s := state.NewStore()
+	_, ok := s.GetAlarm("nonexistent")
+	if ok {
+		t.Error("expected ok=false for missing alarm")
+	}
+}
+
+func TestStoreSnapshotLoadRoundTrip(t *testing.T) {
+	s := state.NewStore()
+	now := time.Now()
+	s.SetAlarm(state.AlarmState{MonitorName: "m1", Status: state.AlarmFiring, LastCheck: now})
+	s.AppendHistory(state.HistoryEvent{MonitorName: "m1", Transition: state.TransitionFiring, At: now})
+
+	snap := s.Snapshot(24 * time.Hour)
+
+	s2 := state.NewStore()
+	s2.LoadSnapshot(snap)
+
+	alarm, ok := s2.GetAlarm("m1")
+	if !ok {
+		t.Fatal("expected alarm to exist after LoadSnapshot")
+	}
+	if alarm.Status != state.AlarmFiring {
+		t.Errorf("expected FIRING, got %s", alarm.Status)
+	}
+	if len(s2.History()) != 1 {
+		t.Errorf("expected 1 history event, got %d", len(s2.History()))
+	}
+	if s2.IsDirty() {
+		t.Error("store should not be dirty after LoadSnapshot")
+	}
+}
+
+func TestStoreConcurrent(t *testing.T) {
+	s := state.NewStore()
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+		n := i
+		go func() {
+			defer wg.Done()
+			s.SetAlarm(state.AlarmState{MonitorName: fmt.Sprintf("m%d", n)})
+		}()
+		go func() {
+			defer wg.Done()
+			_ = s.Alarms()
+		}()
+	}
+	wg.Wait()
 }

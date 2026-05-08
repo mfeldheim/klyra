@@ -51,11 +51,17 @@ func (s *Store) Alarms() map[string]AlarmState {
 	return out
 }
 
+const maxHistoryEvents = 2000
+
 // AppendHistory appends a HistoryEvent and marks the store dirty.
+// The in-memory slice is capped at maxHistoryEvents to prevent unbounded growth.
 func (s *Store) AppendHistory(e HistoryEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.history = append(s.history, e)
+	if len(s.history) > maxHistoryEvents {
+		s.history = s.history[len(s.history)-maxHistoryEvents:]
+	}
 	s.dirty = true
 }
 
@@ -83,7 +89,9 @@ func (s *Store) RemoveSilence(id string) bool {
 	defer s.mu.Unlock()
 	for i, sl := range s.silences {
 		if sl.ID == id {
-			s.silences = append(s.silences[:i], s.silences[i+1:]...)
+			s.silences[i] = s.silences[len(s.silences)-1]
+			s.silences[len(s.silences)-1] = Silence{}
+			s.silences = s.silences[:len(s.silences)-1]
 			s.dirty = true
 			return true
 		}
@@ -131,25 +139,28 @@ func (s *Store) ClearDirty() {
 	s.dirty = false
 }
 
+// copyState returns a deep copy of the store's current state under RLock.
+func (s *Store) copyState() PersistedState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	now := time.Now()
+	ps := PersistedState{
+		UpdatedAt: now,
+		Alarms:    make(map[string]AlarmState, len(s.alarms)),
+		History:   make([]HistoryEvent, len(s.history)),
+		Silences:  make([]Silence, len(s.silences)),
+	}
+	for k, v := range s.alarms {
+		ps.Alarms[k] = v
+	}
+	copy(ps.History, s.history)
+	copy(ps.Silences, s.silences)
+	return ps
+}
+
 // Snapshot returns a PersistedState trimmed to window duration.
 func (s *Store) Snapshot(window time.Duration) PersistedState {
-	s.mu.RLock()
-	alarms := make(map[string]AlarmState, len(s.alarms))
-	for k, v := range s.alarms {
-		alarms[k] = v
-	}
-	history := make([]HistoryEvent, len(s.history))
-	copy(history, s.history)
-	silences := make([]Silence, len(s.silences))
-	copy(silences, s.silences)
-	s.mu.RUnlock()
-
-	ps := PersistedState{
-		UpdatedAt: time.Now(),
-		Alarms:    alarms,
-		History:   history,
-		Silences:  silences,
-	}
+	ps := s.copyState()
 	ps.Trim(window, time.Now())
 	return ps
 }
