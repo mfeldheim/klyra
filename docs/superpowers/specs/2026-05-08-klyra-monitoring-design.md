@@ -354,7 +354,7 @@ The ServiceAccount needs:
 
 ```
 make build   # build React UI → embed into Go binary
-make docker  # build + push multi-arch image (amd64 + arm64)
+make docker  # build + push multi-arch image (native amd64 + arm64, merged manifest)
 make dev     # run locally against current kubeconfig context
 ```
 
@@ -373,10 +373,14 @@ The Dockerfile uses a multi-stage build: Node stage builds the React UI, Go stag
 
 **Pipeline stages:**
 
-1. **test** — `go test ./...` + `go vet ./...`
-2. **build-ui** — `npm ci && npm run build` in `ui/`
-3. **build-push** (after test + build-ui) — Docker buildx multi-arch (`linux/amd64`, `linux/arm64`), push to `ghcr.io/mfeldheim/klyra`
-4. **helm-release** (on version tag only) — `helm package deploy/helm/klyra` + `helm push` to `oci://ghcr.io/mfeldheim/klyra-helm`
+1. **test** — `go test ./...` + `go vet ./...` (runs on `ubuntu-latest`)
+2. **build-ui** — `npm ci && npm run build` in `ui/` (runs on `ubuntu-latest`)
+3. **build-amd64** (after test + build-ui) — builds and pushes `ghcr.io/mfeldheim/klyra:<tag>-amd64` on `ubuntu-latest`
+4. **build-arm64** (after test + build-ui) — builds and pushes `ghcr.io/mfeldheim/klyra:<tag>-arm64` on `ubuntu-24.04-arm` (GitHub's native ARM runner)
+5. **merge-manifest** (after build-amd64 + build-arm64) — uses `docker buildx imagetools create` to combine the two arch-specific images into a single multi-arch manifest at `ghcr.io/mfeldheim/klyra:<tag>`
+6. **helm-release** (on version tag only) — `helm package deploy/helm/klyra` + `helm push` to `oci://ghcr.io/mfeldheim/klyra-helm`
+
+Steps 3 and 4 run in parallel on their respective native runners — no QEMU emulation.
 
 **Permissions required in workflow:**
 ```yaml
