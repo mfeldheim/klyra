@@ -62,22 +62,18 @@ func New(cfg *config.Config, st *state.Store, k8sClient kubernetes.Interface, na
 }
 
 // Run starts all monitors, the state writer, and the evaluate loop.
-// It returns when ctx is cancelled (after all monitor goroutines exit).
+// It returns when ctx is cancelled (after all goroutines exit).
 func (e *Engine) Run(ctx context.Context) error {
 	results := make(chan state.CheckResult, 100)
 
-	// Build thresholds map.
-	thresholds := make(map[string]config.ThresholdConfig, len(e.cfg.Monitors))
-	for _, mc := range e.cfg.Monitors {
-		thresholds[mc.Name] = mc.Threshold
+	// Phase 1: instantiate all monitors before starting any goroutines.
+	type monitorEntry struct {
+		m        monitor.Monitor
+		interval time.Duration
+		thr      config.ThresholdConfig
 	}
-
-	var wg sync.WaitGroup
-
-	// Start a goroutine per monitor.
+	monitors := make([]monitorEntry, 0, len(e.cfg.Monitors))
 	for _, mc := range e.cfg.Monitors {
-		mc := mc // capture loop variable
-
 		var m monitor.Monitor
 		var err error
 		if mc.Type == "kubernetes" {
@@ -88,37 +84,50 @@ func (e *Engine) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("engine: instantiate monitor %q: %w", mc.Name, err)
 		}
-
 		interval := mc.Interval.Duration
 		if interval == 0 {
 			interval = defaultMonitorInterval
 		}
+		monitors = append(monitors, monitorEntry{m, interval, mc.Threshold})
+	}
 
+	// Build threshold map.
+	thresholds := make(map[string]config.ThresholdConfig, len(e.cfg.Monitors))
+	for _, mc := range e.cfg.Monitors {
+		thresholds[mc.Name] = mc.Threshold
+	}
+
+	// Phase 2: start all goroutines.
+	var wg sync.WaitGroup
+	for _, entry := range monitors {
+		entry := entry
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			monitor.Run(ctx, m, interval, results)
+			monitor.Run(ctx, entry.m, entry.interval, results)
 		}()
 	}
 
-	// Start state writer.
-	go e.writer.Run(ctx)
-
-	// Evaluate loop.
+	// Writer and evaluate loop also tracked by wg.
+	wg.Add(2)
 	go func() {
+		defer wg.Done()
+		e.writer.Run(ctx)
+	}()
+	go func() {
+		defer wg.Done()
 		for {
 			select {
 			case r, ok := <-results:
 				if !ok {
 					return
 				}
-				thr, hasThr := thresholds[r.MonitorName]
-				if !hasThr {
+				thr, ok := thresholds[r.MonitorName]
+				if !ok {
 					log.Printf("engine: no threshold for monitor %q, skipping", r.MonitorName)
 					continue
 				}
-				ev := ApplyResult(e.store, thr, r)
-				if ev != nil {
+				if ev := ApplyResult(e.store, thr, r); ev != nil {
 					e.dispatcher.Dispatch(ctx, *ev)
 				}
 			case <-ctx.Done():
