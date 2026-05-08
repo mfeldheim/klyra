@@ -284,12 +284,25 @@ klyra/
 │       └── api/
 │           └── client.ts
 ├── deploy/
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   ├── rbac.yaml                  # ServiceAccount, Role, RoleBinding
-│   ├── configmap-config.yaml      # klyra-config template
-│   ├── configmap-state.yaml       # klyra-state (empty init)
-│   └── lease.yaml
+│   ├── helm/
+│   │   └── klyra/
+│   │       ├── Chart.yaml
+│   │       ├── values.yaml
+│   │       └── templates/
+│   │           ├── deployment.yaml
+│   │           ├── service.yaml
+│   │           ├── rbac.yaml
+│   │           ├── configmap-config.yaml
+│   │           ├── configmap-state.yaml
+│   │           ├── lease.yaml
+│   │           └── _helpers.tpl
+│   └── raw/                       # plain manifests for reference
+│       ├── deployment.yaml
+│       ├── service.yaml
+│       └── rbac.yaml
+├── .github/
+│   └── workflows/
+│       └── ci.yaml
 ├── Dockerfile                     # multi-stage: build UI → embed → build Go binary
 └── Makefile
 ```
@@ -341,8 +354,84 @@ The ServiceAccount needs:
 
 ```
 make build   # build React UI → embed into Go binary
-make docker  # build + push container image
+make docker  # build + push multi-arch image (amd64 + arm64)
 make dev     # run locally against current kubeconfig context
 ```
 
-The Dockerfile uses a multi-stage build: Node stage builds the React UI, Go stage copies the dist output and compiles the binary with `go:embed`.
+The Dockerfile uses a multi-stage build: Node stage builds the React UI, Go stage copies the dist output and compiles the binary with `go:embed`. Multi-arch images are built with `docker buildx` targeting `linux/amd64` and `linux/arm64`.
+
+---
+
+## CI/CD
+
+### GitHub Actions — `.github/workflows/ci.yaml`
+
+**Triggers:**
+- Push to `main` — builds and pushes image tagged `ghcr.io/mfeldheim/klyra:main` + `ghcr.io/mfeldheim/klyra:<sha>`
+- Push of a version tag `v*.*.*` — builds and pushes `ghcr.io/mfeldheim/klyra:<version>` + `ghcr.io/mfeldheim/klyra:latest`, packages and pushes Helm chart to GHCR OCI registry
+- Pull requests — build only (no push), run `go test ./...`
+
+**Pipeline stages:**
+
+1. **test** — `go test ./...` + `go vet ./...`
+2. **build-ui** — `npm ci && npm run build` in `ui/`
+3. **build-push** (after test + build-ui) — Docker buildx multi-arch (`linux/amd64`, `linux/arm64`), push to `ghcr.io/mfeldheim/klyra`
+4. **helm-release** (on version tag only) — `helm package deploy/helm/klyra` + `helm push` to `oci://ghcr.io/mfeldheim/klyra-helm`
+
+**Permissions required in workflow:**
+```yaml
+permissions:
+  contents: read
+  packages: write   # push to GHCR
+```
+
+Authentication uses `GITHUB_TOKEN` (automatic, no extra secrets needed for GHCR).
+
+### Image tagging strategy
+
+| Event | Tags applied |
+|-------|-------------|
+| Push to `main` | `main`, `main-<short-sha>` |
+| Tag `v1.2.3` | `1.2.3`, `1.2`, `latest` |
+| Pull request | build only, no push |
+
+### Helm chart distribution
+
+The Helm chart is published as an OCI artifact alongside the container image:
+
+```
+oci://ghcr.io/mfeldheim/klyra-helm
+```
+
+Install:
+```
+helm install klyra oci://ghcr.io/mfeldheim/klyra-helm/klyra --version 1.2.3
+```
+
+### Key `values.yaml` fields
+
+```yaml
+image:
+  repository: ghcr.io/mfeldheim/klyra
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8080
+
+config: {}       # inline klyra-config YAML — merged into ConfigMap
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+leaderElection:
+  leaseName: klyra-leader
+  namespace: ""  # defaults to release namespace
+```
