@@ -358,7 +358,7 @@ make docker  # build + push multi-arch image (native amd64 + arm64, merged manif
 make dev     # run locally against current kubeconfig context
 ```
 
-The Dockerfile uses a multi-stage build: Node stage builds the React UI, Go stage copies the dist output and compiles the binary with `go:embed`. Multi-arch images are built with `docker buildx` targeting `linux/amd64` and `linux/arm64`.
+The Dockerfile uses a multi-stage build: Node stage (`node:alpine`) builds the React UI, Go stage (`golang:alpine`, latest) copies the dist output and compiles the binary with `go:embed`, final stage is `alpine:latest`. Multi-arch images are built with `docker buildx` targeting `linux/amd64` and `linux/arm64`.
 
 ---
 
