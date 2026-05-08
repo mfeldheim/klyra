@@ -328,6 +328,13 @@ func (m *k8sMonitor) checkEvent(ctx context.Context, now time.Time) (state.Check
 			}
 		}
 		events = filtered
+	} else if m.check != "" {
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckUnknown,
+			Message:     fmt.Sprintf("unknown check %q for event", m.check),
+			Timestamp:   now,
+		}, nil
 	}
 
 	found := len(events) > 0

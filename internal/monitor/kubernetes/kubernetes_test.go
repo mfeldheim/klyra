@@ -43,6 +43,12 @@ func TestDeploymentReadyReplicas(t *testing.T) {
 	if r.Value != float64(2) {
 		t.Errorf("expected ready_replicas=2, got %v", r.Value)
 	}
+	if r.MonitorName != "test" {
+		t.Errorf("expected MonitorName=test, got %q", r.MonitorName)
+	}
+	if r.Timestamp.IsZero() {
+		t.Error("expected non-zero Timestamp")
+	}
 }
 
 func TestNodeReadyCondition(t *testing.T) {
@@ -66,8 +72,17 @@ func TestNodeReadyCondition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := m.Check(context.Background())
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if r.Value != true {
 		t.Errorf("expected ready_condition=true, got %v", r.Value)
+	}
+	if r.MonitorName != "test" {
+		t.Errorf("expected MonitorName=test, got %q", r.MonitorName)
+	}
+	if r.Timestamp.IsZero() {
+		t.Error("expected non-zero Timestamp")
 	}
 }
