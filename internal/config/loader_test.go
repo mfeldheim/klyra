@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -33,8 +32,7 @@ actions:
 `
 
 func TestLoadConfig(t *testing.T) {
-	os.Setenv("TEST_TOKEN", "secret123")
-	defer os.Unsetenv("TEST_TOKEN")
+	t.Setenv("TEST_TOKEN", "secret123")
 
 	cfg, err := config.Load(strings.NewReader(testYAML))
 	if err != nil {
@@ -57,7 +55,6 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestLoadConfigMissingEnvVar(t *testing.T) {
-	os.Unsetenv("TEST_TOKEN")
 	_, err := config.Load(strings.NewReader(testYAML))
 	if err == nil {
 		t.Fatal("expected error for missing env var")

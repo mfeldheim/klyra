@@ -5,6 +5,9 @@ import "fmt"
 var factories = map[string]Factory{}
 
 func Register(typ string, f Factory) {
+	if _, exists := factories[typ]; exists {
+		panic(fmt.Sprintf("action type %q already registered", typ))
+	}
 	factories[typ] = f
 }
 

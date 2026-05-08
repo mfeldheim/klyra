@@ -76,8 +76,8 @@ type PersistedState struct {
 	Silences  []Silence             `json:"silences"`
 }
 
-func (ps *PersistedState) Trim(window time.Duration) {
-	cutoff := time.Now().Add(-window)
+func (ps *PersistedState) Trim(window time.Duration, now time.Time) {
+	cutoff := now.Add(-window)
 	filtered := ps.History[:0]
 	for _, e := range ps.History {
 		if e.At.After(cutoff) {

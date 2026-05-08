@@ -26,8 +26,40 @@ func TestPersistedStateTrim(t *testing.T) {
 		{At: old, MonitorName: "a"},
 		{At: recent, MonitorName: "b"},
 	}
-	ps.Trim(24 * time.Hour)
+	ps.Trim(24*time.Hour, time.Now())
 	if len(ps.History) != 1 || ps.History[0].MonitorName != "b" {
 		t.Fatalf("expected 1 recent event, got %+v", ps.History)
+	}
+}
+
+func TestPersistedStateTrimEmpty(t *testing.T) {
+	ps := &state.PersistedState{}
+	ps.Trim(24*time.Hour, time.Now()) // should not panic
+	if len(ps.History) != 0 {
+		t.Fatal("expected empty history")
+	}
+}
+
+func TestPersistedStateTrimAllOld(t *testing.T) {
+	ps := &state.PersistedState{}
+	ps.History = []state.HistoryEvent{
+		{At: time.Now().Add(-48 * time.Hour), MonitorName: "a"},
+		{At: time.Now().Add(-36 * time.Hour), MonitorName: "b"},
+	}
+	ps.Trim(24*time.Hour, time.Now())
+	if len(ps.History) != 0 {
+		t.Fatalf("expected 0 events, got %d", len(ps.History))
+	}
+}
+
+func TestPersistedStateTrimNoneOld(t *testing.T) {
+	ps := &state.PersistedState{}
+	ps.History = []state.HistoryEvent{
+		{At: time.Now().Add(-1 * time.Hour), MonitorName: "a"},
+		{At: time.Now().Add(-2 * time.Hour), MonitorName: "b"},
+	}
+	ps.Trim(24*time.Hour, time.Now())
+	if len(ps.History) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(ps.History))
 	}
 }
