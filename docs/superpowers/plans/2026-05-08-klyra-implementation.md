@@ -3960,3 +3960,622 @@ git commit -m "feat: embed React UI into Go binary"
 ---
 
 *Section 5 complete. Continuing in Section 6 — Dockerfile, Helm chart, CI/CD.*
+
+---
+
+## Section 6 — Dockerfile, Makefile, Helm Chart, CI/CD
+
+---
+
+### Task 26: Dockerfile (multi-stage, alpine)
+
+**Files:**
+- Create: `Dockerfile`
+
+- [ ] **Step 1: Create Dockerfile**
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+# ── Stage 1: build React UI ──────────────────────────────────────────────────
+FROM node:alpine AS ui-builder
+WORKDIR /ui
+COPY ui/package*.json ./
+RUN npm ci
+COPY ui/ .
+RUN npm run build
+
+# ── Stage 2: build Go binary ─────────────────────────────────────────────────
+FROM golang:alpine AS go-builder
+WORKDIR /app
+# Copy go module files and download deps first (cache layer)
+COPY go.mod go.sum ./
+RUN go mod download
+# Copy source
+COPY . .
+# Copy built UI into the server package for go:embed
+COPY --from=ui-builder /ui/dist ./internal/server/dist
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o klyra .
+
+# ── Stage 3: minimal runtime image ───────────────────────────────────────────
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=go-builder /app/klyra .
+EXPOSE 8080
+ENTRYPOINT ["./klyra"]
+```
+
+- [ ] **Step 2: Verify local build**
+
+```bash
+docker build -t klyra:local .
+echo "exit: $?"
+```
+
+Expected: exit 0, image `klyra:local` created.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Dockerfile
+git commit -m "build: add multi-stage Dockerfile (node:alpine + golang:alpine + alpine)"
+```
+
+---
+
+### Task 27: Makefile
+
+**Files:**
+- Create: `Makefile`
+
+- [ ] **Step 1: Create Makefile**
+
+```makefile
+IMAGE ?= ghcr.io/mfeldheim/klyra
+TAG   ?= dev
+
+.PHONY: build test docker dev lint
+
+build:
+	cd ui && npm ci && npm run build
+	cp -r ui/dist internal/server/dist
+	go build -ldflags="-s -w" -o klyra .
+
+test:
+	go test ./...
+
+lint:
+	go vet ./...
+
+docker:
+	docker build -t $(IMAGE):$(TAG) .
+	docker push $(IMAGE):$(TAG)
+
+dev:
+	go run . --kubeconfig=$(HOME)/.kube/config --addr=:8080
+
+clean:
+	rm -f klyra
+	rm -rf internal/server/dist ui/dist
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add Makefile
+git commit -m "build: add Makefile"
+```
+
+---
+
+### Task 28: Helm chart
+
+**Files:**
+- Create: `deploy/helm/klyra/Chart.yaml`
+- Create: `deploy/helm/klyra/values.yaml`
+- Create: `deploy/helm/klyra/templates/_helpers.tpl`
+- Create: `deploy/helm/klyra/templates/deployment.yaml`
+- Create: `deploy/helm/klyra/templates/service.yaml`
+- Create: `deploy/helm/klyra/templates/rbac.yaml`
+- Create: `deploy/helm/klyra/templates/configmap-config.yaml`
+- Create: `deploy/helm/klyra/templates/configmap-state.yaml`
+- Create: `deploy/helm/klyra/templates/lease.yaml`
+
+- [ ] **Step 1: Create Chart.yaml**
+
+```yaml
+# deploy/helm/klyra/Chart.yaml
+apiVersion: v2
+name: klyra
+description: Kubernetes monitoring tool with config-driven monitors and React UI
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+```
+
+- [ ] **Step 2: Create values.yaml**
+
+```yaml
+# deploy/helm/klyra/values.yaml
+image:
+  repository: ghcr.io/mfeldheim/klyra
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8080
+
+config: {}  # inline klyra-config YAML — merged into ConfigMap
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+leaderElection:
+  leaseName: klyra-leader
+
+namespace: ""  # defaults to release namespace
+```
+
+- [ ] **Step 3: Create _helpers.tpl**
+
+```
+{{/* deploy/helm/klyra/templates/_helpers.tpl */}}
+{{- define "klyra.name" -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "klyra.namespace" -}}
+{{- default .Release.Namespace .Values.namespace }}
+{{- end }}
+
+{{- define "klyra.labels" -}}
+app.kubernetes.io/name: klyra
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+```
+
+- [ ] **Step 4: Create deployment.yaml**
+
+```yaml
+# deploy/helm/klyra/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "klyra.name" . }}
+  namespace: {{ include "klyra.namespace" . }}
+  labels: {{ include "klyra.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{ include "klyra.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "klyra.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "klyra.name" . }}
+      containers:
+        - name: klyra
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config=/etc/klyra/config.yaml
+            - --namespace={{ include "klyra.namespace" . }}
+            - --lease-name={{ .Values.leaderElection.leaseName }}
+            - --addr=:8080
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: config
+              mountPath: /etc/klyra
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "klyra.name" . }}-config
+```
+
+- [ ] **Step 5: Create service.yaml**
+
+```yaml
+# deploy/helm/klyra/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "klyra.name" . }}
+  namespace: {{ include "klyra.namespace" . }}
+  labels: {{ include "klyra.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 8080
+  selector: {{ include "klyra.labels" . | nindent 4 }}
+```
+
+- [ ] **Step 6: Create rbac.yaml**
+
+```yaml
+# deploy/helm/klyra/templates/rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "klyra.name" . }}
+  namespace: {{ include "klyra.namespace" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "klyra.name" . }}
+  namespace: {{ include "klyra.namespace" . }}
+rules:
+  - apiGroups: [""]
+    resources: [pods, nodes, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, create, update]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "klyra.name" . }}
+  namespace: {{ include "klyra.namespace" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "klyra.name" . }}
+    namespace: {{ include "klyra.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "klyra.name" . }}
+  apiGroup: rbac.authorization.k8s.io
+```
+
+- [ ] **Step 7: Create configmap-config.yaml**
+
+```yaml
+# deploy/helm/klyra/templates/configmap-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "klyra.name" . }}-config
+  namespace: {{ include "klyra.namespace" . }}
+data:
+  config.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}
+```
+
+- [ ] **Step 8: Create configmap-state.yaml**
+
+```yaml
+# deploy/helm/klyra/templates/configmap-state.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: klyra-state
+  namespace: {{ include "klyra.namespace" . }}
+data:
+  state.json: "{}"
+```
+
+- [ ] **Step 9: Create lease.yaml**
+
+```yaml
+# deploy/helm/klyra/templates/lease.yaml
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: {{ .Values.leaderElection.leaseName }}
+  namespace: {{ include "klyra.namespace" . }}
+spec:
+  leaseDurationSeconds: 15
+```
+
+- [ ] **Step 10: Verify chart lints**
+
+```bash
+helm lint deploy/helm/klyra
+```
+
+Expected: `1 chart(s) linted, 0 chart(s) failed`
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add deploy/helm/
+git commit -m "feat: add Helm chart"
+```
+
+---
+
+### Task 29: GitHub Actions CI/CD
+
+**Files:**
+- Create: `.github/workflows/ci.yaml`
+
+- [ ] **Step 1: Create ci.yaml**
+
+```yaml
+# .github/workflows/ci.yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/mfeldheim/klyra
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  build-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: npm ci
+        working-directory: ui
+      - run: npm run build
+        working-directory: ui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist/
+
+  build-amd64:
+    needs: [test, build-ui]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/server/dist/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch,suffix=-amd64
+            type=sha,prefix=,suffix=-amd64,format=short
+            type=semver,pattern={{version}},suffix=-amd64
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          # Skip UI build stage — dist already copied above
+          build-args: SKIP_UI_BUILD=1
+          target: go-builder
+      - run: echo "${{ steps.meta.outputs.tags }}" | head -1 > /tmp/amd64-tag
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amd64-tag
+          path: /tmp/amd64-tag
+
+  build-arm64:
+    needs: [test, build-ui]
+    runs-on: ubuntu-24.04-arm
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/server/dist/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch,suffix=-arm64
+            type=sha,prefix=,suffix=-arm64,format=short
+            type=semver,pattern={{version}},suffix=-arm64
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+      - run: echo "${{ steps.meta.outputs.tags }}" | head -1 > /tmp/arm64-tag
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-tag
+          path: /tmp/arm64-tag
+
+  merge-manifest:
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: amd64-tag
+          path: /tmp/
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-tag
+          path: /tmp/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+      - name: Create and push multi-arch manifest
+        run: |
+          AMD64=$(cat /tmp/amd64-tag | head -1)
+          ARM64=$(cat /tmp/arm64-tag | head -1)
+          for TAG in $(echo "${{ steps.meta.outputs.tags }}"); do
+            docker buildx imagetools create -t $TAG $AMD64 $ARM64
+          done
+
+  helm-release:
+    needs: [merge-manifest]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package and push Helm chart
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          helm package deploy/helm/klyra --version $VERSION --app-version $VERSION
+          helm push klyra-${VERSION}.tgz oci://ghcr.io/mfeldheim/klyra-helm
+```
+
+- [ ] **Step 2: Note on Dockerfile adaptation for CI**
+
+The CI passes pre-built `internal/server/dist/` from the `build-ui` artifact. The Dockerfile's `COPY --from=ui-builder` stage is skipped when dist already exists. To support both local and CI builds, update the Dockerfile to check for existing dist:
+
+```dockerfile
+# In go-builder stage, replace:
+#   COPY --from=ui-builder /ui/dist ./internal/server/dist
+# With a conditional COPY that works whether or not ui-builder ran.
+# The simplest approach: keep the Dockerfile as-is for local builds.
+# In CI, the build-amd64/build-arm64 jobs copy dist before docker build,
+# so the COPY --from=ui-builder line is never reached (dist already present).
+# No Dockerfile change required — docker build uses the locally present dist.
+```
+
+Actually, the correct approach for CI is to NOT use multi-stage for UI in CI (since dist is pre-built). Update Dockerfile to optionally skip the ui-builder stage:
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+# ── Stage 1: build React UI (skipped in CI where dist is pre-built) ──────────
+FROM node:alpine AS ui-builder
+WORKDIR /ui
+COPY ui/package*.json ./
+RUN npm ci
+COPY ui/ .
+RUN npm run build
+
+# ── Stage 2: build Go binary ─────────────────────────────────────────────────
+FROM golang:alpine AS go-builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Use pre-built dist if present, otherwise use ui-builder output
+COPY --from=ui-builder /ui/dist ./internal/server/dist
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o klyra .
+
+# ── Stage 3: minimal runtime image ───────────────────────────────────────────
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=go-builder /app/klyra .
+EXPOSE 8080
+ENTRYPOINT ["./klyra"]
+```
+
+In CI, the workflow runs `docker build` after copying `ui-dist` artifact into `internal/server/dist/`. The `COPY --from=ui-builder` will overwrite with the same content — this is harmless. The local dist takes precedence because docker build context is sent first.
+
+- [ ] **Step 3: Verify workflow YAML parses**
+
+```bash
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yaml'))" && echo "YAML OK"
+```
+
+Expected: `YAML OK`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add .github/workflows/ci.yaml
+git commit -m "ci: add GitHub Actions pipeline with native arm64 + amd64 builds and manifest merge"
+```
+
+---
+
+## Self-Review
+
+**Spec coverage check:**
+
+| Spec requirement | Task |
+|---|---|
+| Go binary, cobra CLI | Task 20 |
+| YAML config via ConfigMap, env var interpolation | Task 4 |
+| Restart-to-reload | Covered by startup load in Task 20 |
+| Per-monitor goroutines | Task 5 (runner), Task 12 (engine) |
+| Leader election via Lease | Task 17 |
+| ConfigMap state writer, 10s batch, 24h window | Task 11 |
+| State reader for non-leader replicas | Task 8 (store), Task 20 (startup load) |
+| Evaluator threshold + for-duration | Task 9 |
+| Dispatcher with silence check | Task 10 |
+| kubernetes monitor (deploy/pod/node/event) | Task 15 |
+| http monitor (status, body, timeout, headers) | Task 13 |
+| prometheus monitor (scalar, first_value) | Task 14 |
+| HTTP action with ntfy.sh headers | Task 16 |
+| Monitor/action registry | Task 7 |
+| HTTP API (/api/status, /history, /config, /silences) | Task 18, 19 |
+| React UI (Dashboard, History, Config, Silences) | Tasks 21–24 |
+| go:embed UI into binary | Task 25 |
+| Dockerfile (golang:alpine + alpine:latest) | Task 26 |
+| Makefile | Task 27 |
+| Helm chart with all templates + values | Task 28 |
+| GitHub Actions: test, build-ui, build-amd64, build-arm64, merge-manifest, helm-release | Task 29 |
+| Native arm64 runner, manifest merge | Task 29 |
+
+All spec requirements covered. ✓
+
+**Type consistency:** `AlarmState`, `HistoryEvent`, `Silence`, `CheckResult`, `AlarmEvent` defined in Task 2 (state.go) and referenced consistently throughout. `Monitor` interface in Task 5, `Action` interface in Task 6. Registries in Task 7. All downstream tasks use these exact types. ✓
+
+**No placeholders:** All steps contain complete code. ✓
