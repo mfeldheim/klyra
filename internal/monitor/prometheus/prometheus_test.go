@@ -3,7 +3,6 @@ package prommon_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -74,12 +73,15 @@ func TestPrometheusMonitorFirstValue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := m.Check(context.Background())
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != state.CheckOK {
+		t.Errorf("expected CheckOK, got %s: %s", r.Status, r.Message)
+	}
 	val, ok := r.Value.(float64)
 	if !ok || val < 99.4 || val > 99.6 {
 		t.Errorf("expected ~99.5, got %v", r.Value)
 	}
 }
-
-// Ensure fmt is used (avoid unused import error)
-var _ = fmt.Sprintf
