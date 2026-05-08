@@ -3237,3 +3237,726 @@ git commit -m "feat: add CLI entrypoint with leader election and engine wiring"
 ---
 
 *Section 4 complete. Continuing in Section 5 — React UI.*
+
+---
+
+## Section 5 — React UI
+
+---
+
+### Task 21: Vite + React + TypeScript scaffold
+
+**Files:**
+- Create: `ui/package.json`
+- Create: `ui/vite.config.ts`
+- Create: `ui/tsconfig.json`
+- Create: `ui/index.html`
+- Create: `ui/src/main.tsx`
+
+- [ ] **Step 1: Scaffold with Vite**
+
+```bash
+cd ui && npm create vite@latest . -- --template react-ts
+npm install
+npm install react-router-dom
+```
+
+- [ ] **Step 2: Replace vite.config.ts (add proxy for dev)**
+
+```ts
+// ui/vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8080',
+    },
+  },
+  build: {
+    outDir: 'dist',
+  },
+})
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd .. && git add ui/
+git commit -m "feat: scaffold React + Vite + TypeScript UI"
+```
+
+---
+
+### Task 22: API client types
+
+**Files:**
+- Create: `ui/src/api/client.ts`
+
+- [ ] **Step 1: Implement client.ts**
+
+```ts
+// ui/src/api/client.ts
+
+export type AlarmStatus = 'OK' | 'FIRING' | 'UNKNOWN'
+export type Transition = 'FIRING' | 'RESOLVED'
+
+export interface AlarmState {
+  monitorName: string
+  status: AlarmStatus
+  lastCheck: string
+  firedAt?: string
+  lastValue?: unknown
+  message?: string
+}
+
+export interface HistoryEvent {
+  monitorName: string
+  transition: Transition
+  at: string
+  message?: string
+}
+
+export interface Silence {
+  id: string
+  monitorName: string
+  until: string
+  reason?: string
+}
+
+export interface StatusResponse {
+  alarms: Record<string, AlarmState>
+  updatedAt: string
+}
+
+export interface MonitorConfig {
+  name: string
+  type: string
+  interval: string
+  threshold: { operator: string; value: unknown; for?: string }
+  actions: string[]
+}
+
+export interface ConfigResponse {
+  monitors: MonitorConfig[]
+  actions: { name: string; type: string }[]
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(path)
+  if (!res.ok) throw new Error(`${path}: ${res.status}`)
+  return res.json()
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${path}: ${res.status}`)
+  return res.json()
+}
+
+async function del(path: string): Promise<void> {
+  const res = await fetch(path, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${path}: ${res.status}`)
+}
+
+export const api = {
+  status: () => get<StatusResponse>('/api/status'),
+  history: () => get<HistoryEvent[]>('/api/history'),
+  config: () => get<ConfigResponse>('/api/config'),
+  silences: () => get<Silence[]>('/api/silences'),
+  createSilence: (monitor: string, duration: string, reason: string) =>
+    post<Silence>('/api/silences', { monitor, duration, reason }),
+  deleteSilence: (id: string) => del(`/api/silences/${id}`),
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add ui/src/api/
+git commit -m "feat: add typed API client"
+```
+
+---
+
+### Task 23: Shared components
+
+**Files:**
+- Create: `ui/src/components/StatusBadge.tsx`
+- Create: `ui/src/components/AlarmCard.tsx`
+- Create: `ui/src/components/Timeline.tsx`
+- Create: `ui/src/index.css`
+
+- [ ] **Step 1: Create index.css**
+
+```css
+/* ui/src/index.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f1117; color: #cdd9e5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; }
+a { color: inherit; text-decoration: none; }
+.nav { display: flex; align-items: center; background: #161b22; border-bottom: 1px solid #30363d; padding: 0 20px; height: 48px; }
+.nav-logo { font-weight: 700; font-size: 16px; color: #fff; margin-right: 32px; }
+.nav-logo span { color: #4a90d9; }
+.nav-tab { padding: 0 16px; height: 48px; display: flex; align-items: center; color: #8b949e; cursor: pointer; border-bottom: 2px solid transparent; }
+.nav-tab.active, .nav-tab:hover { color: #fff; }
+.nav-tab.active { border-bottom-color: #4a90d9; }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8b949e; }
+.main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+.summary { display: flex; gap: 12px; margin-bottom: 20px; }
+.summary-card { flex: 1; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; }
+.summary-card.firing { border-color: #f44336; background: #1f1217; }
+.summary-num { font-size: 28px; font-weight: 700; }
+.summary-num.red { color: #f44336; }
+.summary-num.green { color: #4caf50; }
+.summary-num.gray { color: #8b949e; }
+.summary-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; }
+.group-header { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #21262d; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
+.card.firing { border-left: 3px solid #f44336; background: #1a1015; }
+.card.ok { border-left: 3px solid #4caf50; }
+.card.unknown { border-left: 3px solid #ff9800; }
+.card-body { flex: 1; }
+.card-name { font-weight: 600; color: #e6edf3; margin-bottom: 2px; }
+.card-meta { font-size: 11px; color: #8b949e; }
+.card-right { text-align: right; }
+.card-value { font-family: monospace; font-size: 12px; }
+.card-time { font-size: 11px; color: #8b949e; }
+.tag { display: inline-block; background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: 10px; color: #8b949e; margin-right: 4px; }
+.tag.k8s { background: #1c2d3f; color: #7ab8f5; }
+.tag.http { background: #1e2a1e; color: #80c784; }
+.tag.prometheus { background: #2a1e2e; color: #ce93d8; }
+.tl-bar { display: flex; height: 24px; border-radius: 4px; overflow: hidden; gap: 2px; }
+.tl-ok { background: #2a3a2a; flex: 1; border-radius: 3px; }
+.tl-fire { background: #4a1515; border: 1px solid #f44336; flex: 1; border-radius: 3px; }
+.tl-row { margin-bottom: 10px; }
+.tl-name { font-size: 11px; color: #8b949e; margin-bottom: 3px; font-family: monospace; }
+.tl-labels { display: flex; justify-content: space-between; font-size: 10px; color: #555; margin-top: 2px; }
+.block { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+.block h3 { font-size: 12px; color: #7ab8f5; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; color: #8b949e; font-size: 11px; text-transform: uppercase; padding: 4px 8px; border-bottom: 1px solid #30363d; }
+td { padding: 6px 8px; border-bottom: 1px solid #1a1f25; color: #cdd9e5; font-family: monospace; }
+.btn { background: #1c2d3f; border: 1px solid #4a90d9; color: #7ab8f5; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+.btn:hover { background: #21354a; }
+.btn.danger { background: #2e1414; border-color: #f44336; color: #f44336; }
+input, select { background: #0d1117; border: 1px solid #30363d; color: #cdd9e5; border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+.form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+```
+
+- [ ] **Step 2: Create StatusBadge.tsx**
+
+```tsx
+// ui/src/components/StatusBadge.tsx
+import type { AlarmStatus } from '../api/client'
+
+const colours: Record<AlarmStatus, string> = {
+  OK: '#4caf50',
+  FIRING: '#f44336',
+  UNKNOWN: '#ff9800',
+}
+
+export function StatusBadge({ status }: { status: AlarmStatus }) {
+  return (
+    <span style={{ color: colours[status], fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>
+      {status}
+    </span>
+  )
+}
+```
+
+- [ ] **Step 3: Create AlarmCard.tsx**
+
+```tsx
+// ui/src/components/AlarmCard.tsx
+import type { AlarmState } from '../api/client'
+import { StatusBadge } from './StatusBadge'
+
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (diff < 60) return `${diff}s ago`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  return `${Math.floor(diff / 3600)}h ago`
+}
+
+function firedFor(iso?: string): string {
+  if (!iso) return ''
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (diff < 60) return `firing for ${diff}s`
+  if (diff < 3600) return `firing for ${Math.floor(diff / 60)}m`
+  return `firing for ${Math.floor(diff / 3600)}h`
+}
+
+export function AlarmCard({ alarm, monitorType }: { alarm: AlarmState; monitorType?: string }) {
+  return (
+    <div className={`card ${alarm.status.toLowerCase()}`}>
+      <div className="card-body">
+        <div className="card-name">{alarm.monitorName}</div>
+        <div className="card-meta">
+          <StatusBadge status={alarm.status} />
+          {alarm.message && <> · {alarm.message}</>}
+          {monitorType && <> · <span className={`tag ${monitorType}`}>{monitorType}</span></>}
+        </div>
+      </div>
+      <div className="card-right">
+        {alarm.lastValue !== undefined && (
+          <div className="card-value">{String(alarm.lastValue)}</div>
+        )}
+        <div className="card-time">
+          {alarm.firedAt ? firedFor(alarm.firedAt) : `checked ${timeAgo(alarm.lastCheck)}`}
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 4: Create Timeline.tsx**
+
+```tsx
+// ui/src/components/Timeline.tsx
+import type { HistoryEvent } from '../api/client'
+
+interface Props {
+  monitorName: string
+  events: HistoryEvent[]
+  windowHours?: number
+}
+
+export function Timeline({ monitorName, events, windowHours = 24 }: Props) {
+  const now = Date.now()
+  const windowMs = windowHours * 3600 * 1000
+  const start = now - windowMs
+
+  const relevant = events
+    .filter(e => e.monitorName === monitorName && new Date(e.at).getTime() >= start)
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+
+  // Build segments: alternating OK/FIRING
+  const segments: { type: 'ok' | 'fire'; flex: number }[] = []
+  let cursor = start
+  for (const ev of relevant) {
+    const t = new Date(ev.at).getTime()
+    const flex = Math.max(1, t - cursor)
+    if (ev.transition === 'FIRING') {
+      if (cursor < t) segments.push({ type: 'ok', flex })
+    } else {
+      if (cursor < t) segments.push({ type: 'fire', flex })
+    }
+    cursor = t
+  }
+  const tail = Math.max(1, now - cursor)
+  const lastFiring = relevant.length > 0 && relevant[relevant.length - 1].transition === 'FIRING'
+  segments.push({ type: lastFiring ? 'fire' : 'ok', flex: tail })
+
+  return (
+    <div className="tl-row">
+      <div className="tl-name">{monitorName}</div>
+      <div className="tl-bar">
+        {segments.map((s, i) => (
+          <div key={i} className={s.type === 'fire' ? 'tl-fire' : 'tl-ok'} style={{ flex: s.flex }} />
+        ))}
+      </div>
+      <div className="tl-labels"><span>{windowHours}h ago</span><span>now</span></div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ui/src/components/ ui/src/index.css
+git commit -m "feat: add shared UI components"
+```
+
+---
+
+### Task 24: Dashboard, History, Config, Silences pages + App layout
+
+**Files:**
+- Create: `ui/src/pages/Dashboard.tsx`
+- Create: `ui/src/pages/History.tsx`
+- Create: `ui/src/pages/Config.tsx`
+- Create: `ui/src/pages/Silences.tsx`
+- Create: `ui/src/App.tsx`
+- Update: `ui/src/main.tsx`
+
+- [ ] **Step 1: Create Dashboard.tsx**
+
+```tsx
+// ui/src/pages/Dashboard.tsx
+import { useEffect, useState } from 'react'
+import { api, type AlarmState, type HistoryEvent, type ConfigResponse } from '../api/client'
+import { AlarmCard } from '../components/AlarmCard'
+import { Timeline } from '../components/Timeline'
+
+export function Dashboard() {
+  const [alarms, setAlarms] = useState<Record<string, AlarmState>>({})
+  const [history, setHistory] = useState<HistoryEvent[]>([])
+  const [cfg, setCfg] = useState<ConfigResponse | null>(null)
+
+  useEffect(() => {
+    const load = () => {
+      api.status().then(r => setAlarms(r.alarms)).catch(() => {})
+      api.history().then(setHistory).catch(() => {})
+      api.config().then(setCfg).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 30000)
+    return () => clearInterval(id)
+  }, [])
+
+  const typeMap: Record<string, string> = {}
+  cfg?.monitors.forEach(m => { typeMap[m.name] = m.type })
+
+  const all = Object.values(alarms)
+  const firing = all.filter(a => a.status === 'FIRING')
+  const ok = all.filter(a => a.status === 'OK')
+  const unknown = all.filter(a => a.status === 'UNKNOWN')
+
+  return (
+    <div className="main">
+      <div className="summary">
+        <div className={`summary-card${firing.length ? ' firing' : ''}`}>
+          <div className={`summary-num ${firing.length ? 'red' : 'gray'}`}>{firing.length}</div>
+          <div className="summary-label">Firing</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-num green">{ok.length}</div>
+          <div className="summary-label">OK</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-num gray">{unknown.length}</div>
+          <div className="summary-label">Unknown</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-num gray">{all.length}</div>
+          <div className="summary-label">Total</div>
+        </div>
+      </div>
+
+      {all.length > 0 && (
+        <div className="block" style={{ marginBottom: 20 }}>
+          <h3>24h overview</h3>
+          {all.map(a => (
+            <Timeline key={a.monitorName} monitorName={a.monitorName} events={history} />
+          ))}
+        </div>
+      )}
+
+      {firing.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div className="group-header">🔴 Firing ({firing.length})</div>
+          {firing.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
+        </div>
+      )}
+
+      {ok.length > 0 && (
+        <div>
+          <div className="group-header">✅ OK ({ok.length})</div>
+          {ok.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+- [ ] **Step 2: Create History.tsx**
+
+```tsx
+// ui/src/pages/History.tsx
+import { useEffect, useState } from 'react'
+import { api, type HistoryEvent } from '../api/client'
+
+export function History() {
+  const [events, setEvents] = useState<HistoryEvent[]>([])
+  const [filter, setFilter] = useState('')
+
+  useEffect(() => {
+    api.history().then(e => setEvents([...e].reverse())).catch(() => {})
+  }, [])
+
+  const filtered = filter ? events.filter(e => e.monitorName.includes(filter)) : events
+
+  return (
+    <div className="main">
+      <div className="block">
+        <h3>24h Event History</h3>
+        <div className="form-row" style={{ marginBottom: 12 }}>
+          <input placeholder="Filter by monitor name…" value={filter} onChange={e => setFilter(e.target.value)} style={{ width: 260 }} />
+        </div>
+        <table>
+          <thead><tr><th>Time</th><th>Monitor</th><th>Transition</th><th>Message</th></tr></thead>
+          <tbody>
+            {filtered.map((ev, i) => (
+              <tr key={i}>
+                <td>{new Date(ev.at).toLocaleString()}</td>
+                <td>{ev.monitorName}</td>
+                <td style={{ color: ev.transition === 'FIRING' ? '#f44336' : '#4caf50' }}>{ev.transition}</td>
+                <td style={{ color: '#8b949e' }}>{ev.message || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length === 0 && <p style={{ color: '#8b949e', padding: '12px 8px' }}>No events.</p>}
+      </div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 3: Create Config.tsx**
+
+```tsx
+// ui/src/pages/Config.tsx
+import { useEffect, useState } from 'react'
+import { api, type ConfigResponse } from '../api/client'
+
+export function Config() {
+  const [cfg, setCfg] = useState<ConfigResponse | null>(null)
+
+  useEffect(() => { api.config().then(setCfg).catch(() => {}) }, [])
+
+  if (!cfg) return <div className="main"><p style={{ color: '#8b949e' }}>Loading…</p></div>
+
+  return (
+    <div className="main">
+      <div className="block">
+        <h3>Monitors ({cfg.monitors.length})</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Interval</th><th>Threshold</th><th>Actions</th></tr></thead>
+          <tbody>
+            {cfg.monitors.map(m => (
+              <tr key={m.name}>
+                <td>{m.name}</td>
+                <td><span className={`tag ${m.type}`}>{m.type}</span></td>
+                <td>{m.interval || '—'}</td>
+                <td>{m.threshold.operator} {String(m.threshold.value)}{m.threshold.for ? ` for ${m.threshold.for}` : ''}</td>
+                <td>{m.actions.join(', ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="block">
+        <h3>Actions ({cfg.actions.length})</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Type</th></tr></thead>
+          <tbody>
+            {cfg.actions.map(a => (
+              <tr key={a.name}><td>{a.name}</td><td>{a.type}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 4: Create Silences.tsx**
+
+```tsx
+// ui/src/pages/Silences.tsx
+import { useEffect, useState } from 'react'
+import { api, type Silence } from '../api/client'
+
+export function Silences() {
+  const [silences, setSilences] = useState<Silence[]>([])
+  const [monitor, setMonitor] = useState('')
+  const [duration, setDuration] = useState('1h')
+  const [reason, setReason] = useState('')
+  const [err, setErr] = useState('')
+
+  const load = () => api.silences().then(setSilences).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const active = silences.filter(s => new Date(s.until) > new Date())
+
+  const create = async () => {
+    setErr('')
+    try {
+      await api.createSilence(monitor, duration, reason)
+      setMonitor(''); setDuration('1h'); setReason('')
+      load()
+    } catch (e: any) {
+      setErr(e.message)
+    }
+  }
+
+  const remove = async (id: string) => {
+    await api.deleteSilence(id).catch(() => {})
+    load()
+  }
+
+  return (
+    <div className="main">
+      <div className="block">
+        <h3>Create Silence</h3>
+        <div className="form-row">
+          <input placeholder="Monitor name (empty = all)" value={monitor} onChange={e => setMonitor(e.target.value)} style={{ width: 220 }} />
+          <input placeholder="Duration (e.g. 1h, 30m)" value={duration} onChange={e => setDuration(e.target.value)} style={{ width: 140 }} />
+          <input placeholder="Reason" value={reason} onChange={e => setReason(e.target.value)} style={{ width: 200 }} />
+          <button className="btn" onClick={create}>Silence</button>
+        </div>
+        {err && <p style={{ color: '#f44336', fontSize: 11 }}>{err}</p>}
+      </div>
+      <div className="block">
+        <h3>Active Silences ({active.length})</h3>
+        {active.length === 0 && <p style={{ color: '#8b949e', padding: '8px 0' }}>No active silences.</p>}
+        <table>
+          <thead><tr><th>Monitor</th><th>Until</th><th>Reason</th><th></th></tr></thead>
+          <tbody>
+            {active.map(s => (
+              <tr key={s.id}>
+                <td>{s.monitorName || <em style={{ color: '#8b949e' }}>all</em>}</td>
+                <td>{new Date(s.until).toLocaleString()}</td>
+                <td style={{ color: '#8b949e' }}>{s.reason || '—'}</td>
+                <td><button className="btn danger" onClick={() => remove(s.id)}>Remove</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 5: Create App.tsx**
+
+```tsx
+// ui/src/App.tsx
+import { useState } from 'react'
+import { Dashboard } from './pages/Dashboard'
+import { History } from './pages/History'
+import { Config } from './pages/Config'
+import { Silences } from './pages/Silences'
+import './index.css'
+
+type Tab = 'dashboard' | 'history' | 'config' | 'silences'
+
+export function App() {
+  const [tab, setTab] = useState<Tab>('dashboard')
+
+  return (
+    <>
+      <nav className="nav">
+        <div className="nav-logo">kly<span>ra</span></div>
+        {(['dashboard', 'history', 'config', 'silences'] as Tab[]).map(t => (
+          <div key={t} className={`nav-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </div>
+        ))}
+      </nav>
+      {tab === 'dashboard' && <Dashboard />}
+      {tab === 'history' && <History />}
+      {tab === 'config' && <Config />}
+      {tab === 'silences' && <Silences />}
+    </>
+  )
+}
+```
+
+- [ ] **Step 6: Update main.tsx**
+
+```tsx
+// ui/src/main.tsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { App } from './App'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode><App /></StrictMode>
+)
+```
+
+- [ ] **Step 7: Build UI and verify**
+
+```bash
+cd ui && npm run build
+```
+
+Expected: `dist/` created with `index.html` and assets.
+
+- [ ] **Step 8: Commit**
+
+```bash
+cd .. && git add ui/src/
+git commit -m "feat: add React UI pages and app layout"
+```
+
+---
+
+### Task 25: Embed UI into Go binary
+
+**Files:**
+- Create: `internal/server/embed.go`
+- Update: `cmd/root.go`
+
+- [ ] **Step 1: Create embed.go**
+
+```go
+// internal/server/embed.go
+package server
+
+import (
+	"embed"
+	"io/fs"
+)
+
+//go:embed dist
+var embeddedUI embed.FS
+
+// UIFileSystem returns the embedded UI dist as an fs.FS rooted at "dist".
+func UIFileSystem() fs.FS {
+	sub, err := fs.Sub(embeddedUI, "dist")
+	if err != nil {
+		panic(err)
+	}
+	return sub
+}
+```
+
+- [ ] **Step 2: Copy built UI into server package**
+
+```bash
+cp -r ui/dist internal/server/dist
+```
+
+- [ ] **Step 3: Update cmd/root.go to pass embedded FS to server**
+
+In `cmd/root.go`, replace `server.New(h, nil)` with:
+
+```go
+srv := server.New(h, server.UIFileSystem())
+```
+
+Add import if not present:
+```go
+"github.com/mfeldheim/klyra/internal/server"
+```
+
+- [ ] **Step 4: Verify compile and run**
+
+```bash
+go build -o klyra . && echo "build OK"
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/server/embed.go internal/server/dist/
+git commit -m "feat: embed React UI into Go binary"
+```
+
+---
+
+*Section 5 complete. Continuing in Section 6 — Dockerfile, Helm chart, CI/CD.*
