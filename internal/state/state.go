@@ -34,13 +34,14 @@ type CheckResult struct {
 }
 
 type AlarmState struct {
-	MonitorName  string      `json:"monitorName"`
-	Status       AlarmStatus `json:"status"`
-	LastCheck    time.Time   `json:"lastCheck"`
-	FiredAt      *time.Time  `json:"firedAt,omitempty"`
-	PendingSince *time.Time  `json:"pendingSince,omitempty"`
-	LastValue    any         `json:"lastValue,omitempty"`
-	Message      string      `json:"message,omitempty"`
+	MonitorName   string      `json:"monitorName"`
+	Status        AlarmStatus `json:"status"`
+	LastCheck     time.Time   `json:"lastCheck"`
+	FiredAt       *time.Time  `json:"firedAt,omitempty"`
+	PendingSince  *time.Time  `json:"pendingSince,omitempty"`
+	RecoverySince *time.Time  `json:"recoverySince,omitempty"`
+	LastValue     any         `json:"lastValue,omitempty"`
+	Message       string      `json:"message,omitempty"`
 }
 
 type HistoryEvent struct {

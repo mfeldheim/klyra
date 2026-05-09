@@ -17,9 +17,10 @@ type MonitorConfig struct {
 }
 
 type ThresholdConfig struct {
-	Operator string   `yaml:"operator"`
-	Value    any      `yaml:"value"`
-	For      Duration `yaml:"for"`
+	Operator    string   `yaml:"operator"`
+	Value       any      `yaml:"value"`
+	For         Duration `yaml:"for"`
+	RecoveryFor Duration `yaml:"recovery_for"`
 }
 
 type ActionConfig struct {

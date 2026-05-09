@@ -74,13 +74,14 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 	now := r.Timestamp
 
 	updated := state.AlarmState{
-		MonitorName:  r.MonitorName,
-		Status:       current.Status,
-		FiredAt:      current.FiredAt,
-		PendingSince: current.PendingSince,
-		LastCheck:    now,
-		LastValue:    r.Value,
-		Message:      r.Message,
+		MonitorName:   r.MonitorName,
+		Status:        current.Status,
+		FiredAt:       current.FiredAt,
+		PendingSince:  current.PendingSince,
+		RecoverySince: current.RecoverySince,
+		LastCheck:     now,
+		LastValue:     r.Value,
+		Message:       r.Message,
 	}
 
 	// Bug 3: CheckError (failed to run) and CheckUnknown both skip threshold
@@ -96,6 +97,7 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 	var event *state.AlarmEvent
 
 	if met {
+		updated.RecoverySince = nil
 		if updated.PendingSince == nil {
 			updated.PendingSince = &now
 		}
@@ -121,22 +123,51 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 	} else {
 		updated.PendingSince = nil
 		if current.Status == state.AlarmFiring {
-			updated.Status = state.AlarmOK
-			updated.FiredAt = nil
-			// Bug 2: FiredAt on a RESOLVED event should be the original fire
-			// time so callers can compute alarm duration, not the resolution time.
-			var origFiredAt time.Time
-			if current.FiredAt != nil {
-				origFiredAt = *current.FiredAt
-			}
-			event = &state.AlarmEvent{
-				MonitorName: r.MonitorName,
-				Transition:  state.TransitionResolved,
-				Message:     r.Message,
-				Value:       r.Value,
-				FiredAt:     origFiredAt,
+			recoveryDur := thr.RecoveryFor.Duration
+			if recoveryDur == 0 {
+				// No recovery_for configured — resolve immediately (existing behavior)
+				updated.Status = state.AlarmOK
+				updated.FiredAt = nil
+				updated.RecoverySince = nil
+				var origFiredAt time.Time
+				if current.FiredAt != nil {
+					origFiredAt = *current.FiredAt
+				}
+				event = &state.AlarmEvent{
+					MonitorName: r.MonitorName,
+					Transition:  state.TransitionResolved,
+					Message:     r.Message,
+					Value:       r.Value,
+					FiredAt:     origFiredAt,
+				}
+			} else {
+				// Recovery hysteresis: require recovery_for duration of good checks
+				if updated.RecoverySince == nil {
+					updated.RecoverySince = &now
+				}
+				if now.Sub(*updated.RecoverySince) >= recoveryDur {
+					// Recovery sustained long enough — resolve
+					updated.Status = state.AlarmOK
+					updated.FiredAt = nil
+					updated.RecoverySince = nil
+					var origFiredAt time.Time
+					if current.FiredAt != nil {
+						origFiredAt = *current.FiredAt
+					}
+					event = &state.AlarmEvent{
+						MonitorName: r.MonitorName,
+						Transition:  state.TransitionResolved,
+						Message:     r.Message,
+						Value:       r.Value,
+						FiredAt:     origFiredAt,
+					}
+				} else {
+					// Still in recovery window — stay FIRING
+					updated.Status = state.AlarmFiring
+				}
 			}
 		} else {
+			updated.RecoverySince = nil
 			updated.Status = state.AlarmOK
 		}
 	}
