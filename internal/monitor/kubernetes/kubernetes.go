@@ -472,7 +472,12 @@ func (m *k8sMonitor) checkWorkloadsReady(ctx context.Context, now time.Time) (st
 
 	deps, err := m.client.AppsV1().Deployments(m.namespace).List(ctx, listOpts)
 	if err != nil {
-		return state.CheckResult{MonitorName: m.name, Status: state.CheckError, Message: err.Error(), Timestamp: now}, nil
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckError,
+			Message:     err.Error(),
+			Timestamp:   now,
+		}, nil
 	}
 	for _, d := range deps.Items {
 		if d.Spec.Paused {
@@ -489,7 +494,12 @@ func (m *k8sMonitor) checkWorkloadsReady(ctx context.Context, now time.Time) (st
 
 	stss, err := m.client.AppsV1().StatefulSets(m.namespace).List(ctx, listOpts)
 	if err != nil {
-		return state.CheckResult{MonitorName: m.name, Status: state.CheckError, Message: err.Error(), Timestamp: now}, nil
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckError,
+			Message:     err.Error(),
+			Timestamp:   now,
+		}, nil
 	}
 	for _, s := range stss.Items {
 		desired := int32(1)
@@ -503,7 +513,12 @@ func (m *k8sMonitor) checkWorkloadsReady(ctx context.Context, now time.Time) (st
 
 	dss, err := m.client.AppsV1().DaemonSets(m.namespace).List(ctx, listOpts)
 	if err != nil {
-		return state.CheckResult{MonitorName: m.name, Status: state.CheckError, Message: err.Error(), Timestamp: now}, nil
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckError,
+			Message:     err.Error(),
+			Timestamp:   now,
+		}, nil
 	}
 	for _, ds := range dss.Items {
 		if ds.Status.NumberReady < ds.Status.DesiredNumberScheduled {
