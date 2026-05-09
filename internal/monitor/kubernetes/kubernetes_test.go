@@ -253,3 +253,26 @@ func TestPodsReadyLabelSelector(t *testing.T) {
 		t.Errorf("expected Value=true (api pod not ready), got %v", r.Value)
 	}
 }
+
+func TestPodsReadyEmptyNamespace(t *testing.T) {
+	client := fake.NewSimpleClientset()
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "pods_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != false {
+		t.Errorf("expected Value=false (no pods), got %v", r.Value)
+	}
+	if r.Message != "all pods ready" {
+		t.Errorf("expected 'all pods ready', got %q", r.Message)
+	}
+}

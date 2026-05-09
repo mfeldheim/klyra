@@ -57,6 +57,13 @@ func NewWithClient(name string, cfg map[string]any, client kubernetes.Interface)
 		}
 	}
 
+	switch kind {
+	case "deployment", "pod", "node":
+		if check == "" {
+			return nil, fmt.Errorf("kubernetes monitor %q: kind %q requires a 'check' field", name, kind)
+		}
+	}
+
 	return &k8sMonitor{
 		name:      name,
 		kind:      kind,
@@ -392,7 +399,10 @@ func (m *k8sMonitor) checkEvent(ctx context.Context, now time.Time) (state.Check
 
 // checkPodsReady lists pods in the configured namespace, skipping completed and
 // terminating pods, and returns Value=true if any active pod is not Ready.
-// The check field is used as an optional label selector.
+// The check field is used as an optional label selector (e.g. "app=myapp").
+// When no active pods are found (empty namespace or all filtered out), returns
+// Value=false — callers should be aware that zero pods is indistinguishable
+// from all-pods-ready without additional monitoring.
 func (m *k8sMonitor) checkPodsReady(ctx context.Context, now time.Time) (state.CheckResult, error) {
 	listOpts := metav1.ListOptions{}
 	if m.check != "" {
