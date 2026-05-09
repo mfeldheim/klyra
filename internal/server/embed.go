@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed dist
+//go:embed all:dist
 var embeddedUI embed.FS
 
 // UIFileSystem returns the embedded UI dist as an fs.FS rooted at "dist".
