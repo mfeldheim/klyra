@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type Server struct {
@@ -60,7 +61,11 @@ type spaHandler struct {
 }
 
 func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	_, err := h.uiFS.Open(r.URL.Path)
+	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "" {
+		name = "."
+	}
+	f, err := h.uiFS.Open(name)
 	if err != nil {
 		// File not found — serve index.html for client-side routing
 		r2 := r.Clone(r.Context())
@@ -68,5 +73,6 @@ func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fileServer.ServeHTTP(w, r2)
 		return
 	}
+	f.Close()
 	h.fileServer.ServeHTTP(w, r)
 }
