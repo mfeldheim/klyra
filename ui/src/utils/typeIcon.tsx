@@ -1,34 +1,37 @@
 import type { JSX } from 'react'
+import LanguageRounded from '@mui/icons-material/LanguageRounded'
+import HexagonRounded from '@mui/icons-material/HexagonRounded'
+import LocalFireDepartmentRounded from '@mui/icons-material/LocalFireDepartmentRounded'
+import HelpRounded from '@mui/icons-material/HelpRounded'
+import LanRounded from '@mui/icons-material/LanRounded'
+import VpnLockRounded from '@mui/icons-material/VpnLockRounded'
+import StorageRounded from '@mui/icons-material/StorageRounded'
+import MemoryRounded from '@mui/icons-material/MemoryRounded'
+import LockRounded from '@mui/icons-material/LockRounded'
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded'
+
+const s = (size: number) => ({ fontSize: size, width: size, height: size })
 
 export function typeIcon(type: string, size = 16): JSX.Element {
   switch (type) {
-    case 'http':
-      return (
-        <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="7" />
-          <path d="M8 1c-1.5 2-2.5 4.5-2.5 7s1 5 2.5 7M8 1c1.5 2 2.5 4.5 2.5 7s-1 5-2.5 7M1 8h14" />
-        </svg>
-      )
-    case 'kubernetes':
-      return (
-        <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M8 1L14.5 4.5v7L8 15 1.5 11.5v-7z" />
-          <circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none" />
-        </svg>
-      )
+    case 'http': return <LanguageRounded style={s(size)} />
+    case 'kubernetes': return <HexagonRounded style={s(size)} />
     case 'prometheus':
-    case 'prometheus_scrape':
-      return (
-        <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor">
-          <path d="M8 2c0 2.5-3 3.5-3 7a3 3 0 0 0 6 0c0-1.5-1-2.5-1-4 0 0-1 1-1 2.5C8.5 9.5 7 8.5 7 7 7 5.5 8 2 8 2z" />
-        </svg>
-      )
-    default:
-      return (
-        <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="7" />
-          <text x="8" y="12" textAnchor="middle" fontSize="9">?</text>
-        </svg>
-      )
+    case 'prometheus_scrape': return <LocalFireDepartmentRounded style={s(size)} />
+    default: return <HelpRounded style={s(size)} />
+  }
+}
+
+export function iconFromName(name: string, size = 16): JSX.Element {
+  switch (name) {
+    case 'globe': return <LanguageRounded style={s(size)} />
+    case 'kubernetes': return <HexagonRounded style={s(size)} />
+    case 'network': return <LanRounded style={s(size)} />
+    case 'tunnel': return <VpnLockRounded style={s(size)} />
+    case 'database': return <StorageRounded style={s(size)} />
+    case 'memory': return <MemoryRounded style={s(size)} />
+    case 'lock': return <LockRounded style={s(size)} />
+    case 'warning': return <WarningAmberRounded style={s(size)} />
+    default: return <HelpRounded style={s(size)} />
   }
 }

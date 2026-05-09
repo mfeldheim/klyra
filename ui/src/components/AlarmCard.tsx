@@ -1,6 +1,6 @@
 import type { AlarmState } from '../api/client'
 import { StatusBadge } from './StatusBadge'
-import { typeIcon } from '../utils/typeIcon'
+import { typeIcon, iconFromName } from '../utils/typeIcon'
 
 function timeAgo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
@@ -41,7 +41,7 @@ export function AlarmCard({ alarm, monitorType, selected, onSelect }: AlarmCardP
       onClick={() => onSelect?.(alarm)}
     >
       {alarm.icon && (
-        <div className="card-icon" title={monitorType}>{alarm.icon}</div>
+        <div className="card-icon" title={monitorType}>{iconFromName(alarm.icon, 20)}</div>
       )}
       <div className="card-body">
         <div className="card-name">{alarm.monitorName}</div>
