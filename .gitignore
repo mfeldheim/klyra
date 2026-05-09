@@ -6,3 +6,4 @@ internal/server/dist/*
 !internal/server/dist/.gitkeep
 .env
 *.test
+.superpowers/
