@@ -123,6 +123,7 @@ func (m *httpMonitor) Check(ctx context.Context) (state.CheckResult, error) {
 	for k, v := range m.headers {
 		req.Header.Set(k, v)
 	}
+	req.Header.Set("User-Agent", "klyra-monitor/1.0")
 
 	resp, err := m.client.Do(req)
 	if err != nil {
