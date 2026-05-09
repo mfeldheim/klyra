@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	_ "github.com/mfeldheim/klyra/internal/action/http"
+	_ "github.com/mfeldheim/klyra/internal/action/pushover"
 	_ "github.com/mfeldheim/klyra/internal/monitor/http"
 	_ "github.com/mfeldheim/klyra/internal/monitor/kubernetes"
 	_ "github.com/mfeldheim/klyra/internal/monitor/prometheus"
