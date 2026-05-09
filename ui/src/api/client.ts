@@ -11,6 +11,7 @@ export interface AlarmState {
   lastValue?: unknown
   message?: string
   icon?: string
+  group?: string
 }
 
 export interface HistoryEvent {
@@ -38,6 +39,7 @@ export interface MonitorConfig {
   interval: string
   threshold: { operator: string; value: unknown; for?: string }
   actions: string[]
+  group?: string
 }
 
 export interface ConfigResponse {
