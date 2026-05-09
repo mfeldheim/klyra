@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Klyra UI Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f1117; color: #cdd9e5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; }
+
+  /* Nav */
+  .nav { display: flex; align-items: center; gap: 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 0 20px; height: 48px; }
+  .nav-logo { font-weight: 700; font-size: 16px; color: #fff; letter-spacing: -0.5px; margin-right: 32px; }
+  .nav-logo span { color: #4a90d9; }
+  .nav-tab { padding: 0 16px; height: 48px; display: flex; align-items: center; font-size: 13px; color: #8b949e; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .nav-tab.active { color: #fff; border-bottom-color: #4a90d9; }
+  .nav-tab:hover { color: #cdd9e5; }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #f44336; }
+  .status-dot.ok { background: #4caf50; }
+  .status-text { font-size: 12px; color: #8b949e; }
+
+  /* Layout */
+  .layout { display: flex; height: calc(100vh - 48px); }
+  .sidebar { width: 200px; background: #161b22; border-right: 1px solid #30363d; padding: 16px 0; flex-shrink: 0; }
+  .main { flex: 1; overflow-y: auto; padding: 20px; }
+
+  /* Sidebar */
+  .sidebar-section { padding: 0 12px; margin-bottom: 16px; }
+  .sidebar-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e; padding: 0 8px; margin-bottom: 6px; }
+  .sidebar-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: #8b949e; font-size: 12px; }
+  .sidebar-item:hover { background: #21262d; color: #cdd9e5; }
+  .sidebar-item.active { background: #1c2d3f; color: #7ab8f5; }
+  .badge { font-size: 10px; background: #f44336; color: #fff; border-radius: 10px; padding: 1px 6px; }
+  .badge.ok { background: #2a3a2a; color: #4caf50; }
+
+  /* Summary bar */
+  .summary { display: flex; gap: 12px; margin-bottom: 20px; }
+  .summary-card { flex: 1; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; }
+  .summary-card.firing { border-color: #f44336; background: #1f1217; }
+  .summary-card.ok { border-color: #2a3a2a; }
+  .summary-num { font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+  .summary-num.red { color: #f44336; }
+  .summary-num.green { color: #4caf50; }
+  .summary-num.gray { color: #8b949e; }
+  .summary-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Monitor groups */
+  .group { margin-bottom: 20px; }
+  .group-header { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #21262d; }
+
+  /* Alarm cards */
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
+  .card.firing { border-left: 3px solid #f44336; background: #1a1015; }
+  .card.ok { border-left: 3px solid #4caf50; }
+  .card.unknown { border-left: 3px solid #ff9800; background: #1a1510; }
+  .card-icon { font-size: 16px; flex-shrink: 0; width: 20px; text-align: center; }
+  .card-body { flex: 1; min-width: 0; }
+  .card-name { font-weight: 600; font-size: 13px; color: #e6edf3; margin-bottom: 2px; }
+  .card-meta { font-size: 11px; color: #8b949e; }
+  .card-meta span { color: #f44336; }
+  .card-meta span.ok { color: #4caf50; }
+  .card-right { text-align: right; flex-shrink: 0; }
+  .card-value { font-family: monospace; font-size: 12px; color: #cdd9e5; margin-bottom: 2px; }
+  .card-time { font-size: 11px; color: #8b949e; }
+  .tag { display: inline-block; background: #21262d; border-radius: 4px; padding: 1px 6px; font-size: 10px; color: #8b949e; margin-right: 4px; }
+  .tag.k8s { background: #1c2d3f; color: #7ab8f5; }
+  .tag.http { background: #1e2a1e; color: #80c784; }
+  .tag.prom { background: #2a1e2e; color: #ce93d8; }
+
+  /* Timeline section */
+  .timeline { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; margin-bottom: 20px; }
+  .timeline-header { font-size: 12px; color: #8b949e; margin-bottom: 12px; display: flex; justify-content: space-between; }
+  .tl-bar { display: flex; height: 28px; border-radius: 4px; overflow: hidden; gap: 2px; align-items: center; }
+  .tl-segment { height: 100%; border-radius: 3px; position: relative; cursor: pointer; transition: opacity 0.1s; }
+  .tl-segment:hover { opacity: 0.8; }
+  .tl-ok { background: #2a3a2a; }
+  .tl-fire { background: #4a1515; border: 1px solid #f44336; }
+  .tl-label { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #555; }
+  .tl-row { margin-bottom: 8px; }
+  .tl-name { font-size: 11px; color: #8b949e; margin-bottom: 3px; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="nav-logo">kly<span>ra</span></div>
+  <div class="nav-tab active">Dashboard</div>
+  <div class="nav-tab">History</div>
+  <div class="nav-tab">Config</div>
+  <div class="nav-tab">Silences</div>
+  <div class="nav-right">
+    <div class="status-dot"></div>
+    <div class="status-text">2 firing · last check 12s ago</div>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Monitors</div>
+      <div class="sidebar-item active">All monitors <span class="badge">2</span></div>
+      <div class="sidebar-item">Firing <span class="badge">2</span></div>
+      <div class="sidebar-item">OK <span class="badge ok">9</span></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">By type</div>
+      <div class="sidebar-item">kubernetes</div>
+      <div class="sidebar-item">http</div>
+      <div class="sidebar-item">prometheus</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Actions</div>
+      <div class="sidebar-item">Silence</div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- Summary -->
+    <div class="summary">
+      <div class="summary-card firing">
+        <div class="summary-num red">2</div>
+        <div class="summary-label">Firing</div>
+      </div>
+      <div class="summary-card ok">
+        <div class="summary-num green">9</div>
+        <div class="summary-label">OK</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-num gray">0</div>
+        <div class="summary-label">Unknown</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-num gray">11</div>
+        <div class="summary-label">Total</div>
+      </div>
+    </div>
+
+    <!-- 24h mini-timeline -->
+    <div class="timeline">
+      <div class="timeline-header">
+        <span>24h overview</span>
+        <span style="font-size:11px">now →</span>
+      </div>
+      <div class="tl-row">
+        <div class="tl-name">api-deployment-health</div>
+        <div class="tl-bar">
+          <div class="tl-segment tl-ok" style="flex:12"></div>
+          <div class="tl-segment tl-fire" style="flex:3"></div>
+          <div class="tl-segment tl-ok" style="flex:5"></div>
+          <div class="tl-segment tl-fire" style="flex:2"></div>
+        </div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-name">api-health-check</div>
+        <div class="tl-bar">
+          <div class="tl-segment tl-ok" style="flex:20"></div>
+          <div class="tl-segment tl-fire" style="flex:2"></div>
+        </div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-name">high-error-rate</div>
+        <div class="tl-bar">
+          <div class="tl-segment tl-ok" style="flex:22"></div>
+        </div>
+      </div>
+      <div class="tl-label"><span>24h ago</span><span>12h ago</span><span>now</span></div>
+    </div>
+
+    <!-- Firing -->
+    <div class="group">
+      <div class="group-header">🔴 Firing (2)</div>
+
+      <div class="card firing">
+        <div class="card-icon">🚨</div>
+        <div class="card-body">
+          <div class="card-name">api-deployment-health</div>
+          <div class="card-meta"><span>FIRING</span> · ready replicas below threshold · <span class="tag k8s">kubernetes</span><span class="tag">deployment/api</span></div>
+        </div>
+        <div class="card-right">
+          <div class="card-value">1 / 3 ready</div>
+          <div class="card-time">firing for 14m</div>
+        </div>
+      </div>
+
+      <div class="card firing">
+        <div class="card-icon">🚨</div>
+        <div class="card-body">
+          <div class="card-name">api-health-check</div>
+          <div class="card-meta"><span>FIRING</span> · unexpected status code · <span class="tag http">http</span><span class="tag">api.example.com</span></div>
+        </div>
+        <div class="card-right">
+          <div class="card-value">503 (expected 200)</div>
+          <div class="card-time">firing for 9m</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OK -->
+    <div class="group">
+      <div class="group-header">✅ OK (9)</div>
+
+      <div class="card ok">
+        <div class="card-icon">✅</div>
+        <div class="card-body">
+          <div class="card-name">node-not-ready</div>
+          <div class="card-meta"><span class="ok">OK</span> · all nodes ready · <span class="tag k8s">kubernetes</span><span class="tag">node</span></div>
+        </div>
+        <div class="card-right">
+          <div class="card-value">3 / 3 ready</div>
+          <div class="card-time">checked 28s ago</div>
+        </div>
+      </div>
+
+      <div class="card ok">
+        <div class="card-icon">✅</div>
+        <div class="card-body">
+          <div class="card-name">high-error-rate</div>
+          <div class="card-meta"><span class="ok">OK</span> · error rate normal · <span class="tag prom">prometheus</span></div>
+        </div>
+        <div class="card-right">
+          <div class="card-value">0.8% errors</div>
+          <div class="card-time">checked 1m ago</div>
+        </div>
+      </div>
+
+      <div class="card ok" style="opacity:0.6">
+        <div class="card-icon">✅</div>
+        <div class="card-body">
+          <div class="card-name">worker-deployment-health</div>
+          <div class="card-meta"><span class="ok">OK</span> · <span class="tag k8s">kubernetes</span><span class="tag">deployment/worker</span></div>
+        </div>
+        <div class="card-right">
+          <div class="card-value">4 / 4 ready</div>
+          <div class="card-time">checked 45s ago</div>
+        </div>
+      </div>
+
+      <div style="text-align:center;padding:8px;font-size:11px;color:#555">+ 6 more OK monitors</div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

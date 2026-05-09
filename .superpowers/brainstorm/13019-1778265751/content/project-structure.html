@@ -1,0 +1,132 @@
+<h2>Project Structure</h2>
+<p class="subtitle">Go module layout + React UI + Kubernetes manifests</p>
+
+<style>
+  .tree-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  .tree {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+  .tree h3 {
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #7ab8f5;
+    margin: 0 0 10px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .d { color: #7ab8f5; font-weight: bold; }
+  .f { color: #cdd9e5; }
+  .note { color: #8b949e; }
+  .indent1 { padding-left: 16px; }
+  .indent2 { padding-left: 32px; }
+  .indent3 { padding-left: 48px; }
+  .indent4 { padding-left: 64px; }
+  .sep { border-top: 1px solid #21262d; margin: 8px 0; }
+</style>
+
+<div class="tree-wrap">
+  <div class="tree">
+    <h3>Go backend</h3>
+    <div><span class="d">klyra/</span></div>
+    <div class="indent1"><span class="f">go.mod</span></div>
+    <div class="indent1"><span class="f">main.go</span> <span class="note">— wires everything, starts leader election</span></div>
+    <div class="sep"></div>
+    <div class="indent1"><span class="d">cmd/</span></div>
+    <div class="indent2"><span class="f">root.go</span> <span class="note">— cobra CLI, flags</span></div>
+    <div class="sep"></div>
+    <div class="indent1"><span class="d">internal/</span></div>
+    <div class="indent2"><span class="d">config/</span></div>
+    <div class="indent3"><span class="f">loader.go</span> <span class="note">— parse YAML from ConfigMap</span></div>
+    <div class="indent3"><span class="f">types.go</span> <span class="note">— MonitorConfig, ActionConfig structs</span></div>
+    <div class="sep"></div>
+    <div class="indent2"><span class="d">engine/</span></div>
+    <div class="indent3"><span class="f">engine.go</span> <span class="note">— orchestrates monitors, evaluator, dispatcher</span></div>
+    <div class="indent3"><span class="f">evaluator.go</span> <span class="note">— threshold + for-duration logic</span></div>
+    <div class="indent3"><span class="f">dispatcher.go</span> <span class="note">— fires actions on state transition</span></div>
+    <div class="indent3"><span class="f">statewriter.go</span> <span class="note">— batched ConfigMap writes</span></div>
+    <div class="sep"></div>
+    <div class="indent2"><span class="d">monitor/</span></div>
+    <div class="indent3"><span class="f">monitor.go</span> <span class="note">— Monitor interface + CheckResult</span></div>
+    <div class="indent3"><span class="f">runner.go</span> <span class="note">— per-monitor goroutine loop</span></div>
+    <div class="indent3"><span class="f">registry.go</span> <span class="note">— factory map</span></div>
+    <div class="indent3"><span class="d">kubernetes/</span></div>
+    <div class="indent4"><span class="f">kubernetes.go</span></div>
+    <div class="indent3"><span class="d">http/</span></div>
+    <div class="indent4"><span class="f">http.go</span></div>
+    <div class="indent3"><span class="d">prometheus/</span></div>
+    <div class="indent4"><span class="f">prometheus.go</span></div>
+    <div class="sep"></div>
+    <div class="indent2"><span class="d">action/</span></div>
+    <div class="indent3"><span class="f">action.go</span> <span class="note">— Action interface + AlarmEvent</span></div>
+    <div class="indent3"><span class="f">registry.go</span></div>
+    <div class="indent3"><span class="d">http/</span></div>
+    <div class="indent4"><span class="f">http.go</span> <span class="note">— ntfy.sh-compatible HTTP action</span></div>
+    <div class="sep"></div>
+    <div class="indent2"><span class="d">state/</span></div>
+    <div class="indent3"><span class="f">state.go</span> <span class="note">— AlarmState, HistoryEvent, Silence types</span></div>
+    <div class="indent3"><span class="f">store.go</span> <span class="note">— in-memory store, read/write ConfigMap</span></div>
+    <div class="sep"></div>
+    <div class="indent2"><span class="d">server/</span></div>
+    <div class="indent3"><span class="f">server.go</span> <span class="note">— HTTP server, routes, SPA handler</span></div>
+    <div class="indent3"><span class="f">handlers.go</span> <span class="note">— /api/* handlers</span></div>
+    <div class="indent3"><span class="f">middleware.go</span></div>
+    <div class="sep"></div>
+    <div class="indent2"><span class="d">leader/</span></div>
+    <div class="indent3"><span class="f">election.go</span> <span class="note">— k8s lease-based leader election</span></div>
+  </div>
+
+  <div>
+    <div class="tree">
+      <h3>React UI</h3>
+      <div><span class="d">ui/</span></div>
+      <div class="indent1"><span class="f">package.json</span></div>
+      <div class="indent1"><span class="f">vite.config.ts</span></div>
+      <div class="indent1"><span class="d">src/</span></div>
+      <div class="indent2"><span class="f">main.tsx</span></div>
+      <div class="indent2"><span class="f">App.tsx</span> <span class="note">— layout + routing</span></div>
+      <div class="indent2"><span class="d">pages/</span></div>
+      <div class="indent3"><span class="f">Dashboard.tsx</span> <span class="note">— current alarm states</span></div>
+      <div class="indent3"><span class="f">History.tsx</span> <span class="note">— 24h timeline</span></div>
+      <div class="indent3"><span class="f">Config.tsx</span> <span class="note">— read-only config view</span></div>
+      <div class="indent3"><span class="f">Silences.tsx</span> <span class="note">— silence/ack management</span></div>
+      <div class="indent2"><span class="d">components/</span></div>
+      <div class="indent3"><span class="f">AlarmCard.tsx</span></div>
+      <div class="indent3"><span class="f">StatusBadge.tsx</span></div>
+      <div class="indent3"><span class="f">Timeline.tsx</span></div>
+      <div class="indent2"><span class="d">api/</span></div>
+      <div class="indent3"><span class="f">client.ts</span> <span class="note">— typed fetch wrappers</span></div>
+    </div>
+
+    <div class="tree" style="margin-top:14px">
+      <h3>Kubernetes manifests</h3>
+      <div><span class="d">deploy/</span></div>
+      <div class="indent1"><span class="f">deployment.yaml</span></div>
+      <div class="indent1"><span class="f">service.yaml</span></div>
+      <div class="indent1"><span class="f">rbac.yaml</span> <span class="note">— ServiceAccount, Role, RoleBinding</span></div>
+      <div class="indent1"><span class="f">configmap-config.yaml</span> <span class="note">— klyra-config template</span></div>
+      <div class="indent1"><span class="f">configmap-state.yaml</span> <span class="note">— klyra-state (empty init)</span></div>
+      <div class="indent1"><span class="f">lease.yaml</span> <span class="note">— leader election Lease resource</span></div>
+    </div>
+
+    <div class="tree" style="margin-top:14px">
+      <h3>Build</h3>
+      <div><span class="f">Dockerfile</span> <span class="note">— multi-stage: build UI → embed → build Go binary</span></div>
+      <div><span class="f">Makefile</span></div>
+      <div class="indent1"><span class="note">make build   — build binary with embedded UI</span></div>
+      <div class="indent1"><span class="note">make docker  — build + push image</span></div>
+      <div class="indent1"><span class="note">make dev     — run locally against current kubeconfig</span></div>
+    </div>
+  </div>
+</div>

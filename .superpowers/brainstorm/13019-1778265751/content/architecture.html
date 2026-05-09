@@ -1,0 +1,194 @@
+<h2>Klyra — Architecture Overview</h2>
+<p class="subtitle">Option B: per-monitor goroutines, leader election, ConfigMap state</p>
+
+<style>
+  .arch {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-family: monospace;
+    font-size: 13px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .arch-row {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+  }
+  .box {
+    border: 1.5px solid #4a90d9;
+    border-radius: 8px;
+    padding: 10px 14px;
+    background: #1a2a3a;
+    flex: 1;
+    min-width: 0;
+  }
+  .box.green { border-color: #4caf50; background: #1a2e1a; }
+  .box.orange { border-color: #ff9800; background: #2e2010; }
+  .box.purple { border-color: #9c27b0; background: #1e1230; }
+  .box.gray { border-color: #888; background: #1e1e1e; }
+  .box.red { border-color: #f44336; background: #2e1414; }
+  .box-title {
+    font-weight: bold;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    color: #aaa;
+  }
+  .box-title.blue { color: #4a90d9; }
+  .box-title.green { color: #4caf50; }
+  .box-title.orange { color: #ff9800; }
+  .box-title.purple { color: #9c27b0; }
+  .box-title.red { color: #f44336; }
+  .box-body {
+    color: #ddd;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 18px;
+    padding: 0 4px;
+    flex: 0 0 auto;
+  }
+  .arrow.down {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: #555;
+    font-size: 18px;
+    line-height: 1;
+    margin: -4px 0;
+  }
+  .label {
+    font-size: 10px;
+    color: #666;
+    text-align: center;
+    display: block;
+  }
+  .monitors-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .mini-box {
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: #111;
+    font-size: 11px;
+    color: #bbb;
+  }
+  .mini-box span { color: #4a90d9; font-weight: bold; }
+  .pill {
+    display: inline-block;
+    background: #2a3a4a;
+    border: 1px solid #4a90d9;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: #7ab8f5;
+    margin: 2px 3px 2px 0;
+  }
+  .pill.green { background: #1a2e1a; border-color: #4caf50; color: #80c784; }
+  .pill.orange { background: #2e2010; border-color: #ff9800; color: #ffb74d; }
+</style>
+
+<div class="arch">
+
+  <!-- Config layer -->
+  <div class="arch-row">
+    <div class="box gray">
+      <div class="box-title">ConfigMap: klyra-config</div>
+      <div class="box-body">YAML — list of monitors (type, interval, thresholds) + action definitions</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box gray">
+      <div class="box-title">ConfigMap: klyra-state</div>
+      <div class="box-body">JSON — alarm states + 24h event history, written by leader every ~10s</div>
+    </div>
+  </div>
+
+  <div class="arrow down">↓ <span class="label">loaded at startup</span></div>
+
+  <!-- Engine -->
+  <div class="arch-row">
+    <div class="box">
+      <div class="box-title blue">Engine (leader pod only)</div>
+      <div class="box-body">
+        Leader election via k8s Lease. Only one replica runs the engine at a time.<br><br>
+        <strong>Loader</strong> — parses config, instantiates monitors + actions<br>
+        <strong>Evaluator</strong> — reads results channel, applies threshold logic, updates alarm state<br>
+        <strong>State writer</strong> — batches state to klyra-state ConfigMap every 10s, trims &gt;24h entries<br>
+        <strong>Dispatcher</strong> — fires action modules when alarm state changes
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow down">↓ <span class="label">spawns goroutines</span></div>
+
+  <!-- Monitor modules -->
+  <div class="arch-row">
+    <div class="box green">
+      <div class="box-title green">Monitor Modules</div>
+      <div class="box-body">
+        Each monitor = one goroutine with its own ticker interval<br>
+        Sends <code>CheckResult{monitorID, status, value, ts}</code> to results channel<br><br>
+        <div class="monitors-grid">
+          <div class="mini-box"><span>k8s</span> — pod/deploy/node/event watcher</div>
+          <div class="mini-box"><span>http</span> — status code, latency, body match</div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box orange">
+      <div class="box-title orange">Action Modules</div>
+      <div class="box-body">
+        Triggered by Dispatcher on alarm state change (firing / resolved)<br><br>
+        <div class="mini-box"><span>http</span> — POST to URL with ntfy.sh headers:<br>
+          <span class="pill orange">Authorization: Bearer</span>
+          <span class="pill orange">X-Priority</span>
+          <span class="pill orange">X-Tags</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow down">↓ <span class="label">all replicas serve</span></div>
+
+  <!-- HTTP + UI -->
+  <div class="arch-row">
+    <div class="box purple">
+      <div class="box-title purple">HTTP Server (all replicas)</div>
+      <div class="box-body">
+        <code>GET /api/status</code> — current alarm state (read from klyra-state)<br>
+        <code>GET /api/history</code> — 24h event timeline<br>
+        <code>GET /api/config</code> — parsed monitor config (read-only view)<br>
+        <code>POST /api/silences</code> — create silence / ack<br>
+        <code>GET /</code> — serves React SPA
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow down">↓</div>
+
+  <!-- React UI -->
+  <div class="arch-row">
+    <div class="box red">
+      <div class="box-title red">React UI</div>
+      <div class="box-body">
+        <span class="pill">Status dashboard</span>
+        <span class="pill">24h history timeline</span>
+        <span class="pill">Config viewer</span>
+        <span class="pill">Silence / ack controls</span>
+        <br>Polls <code>/api/status</code> every 30s (or configurable interval)
+      </div>
+    </div>
+  </div>
+
+</div>
