@@ -11,7 +11,7 @@ metadata:
   namespace: {{ include "klyra.namespace" . }}
 rules:
   - apiGroups: [""]
-    resources: [pods, nodes, events]
+    resources: [pods, events]
     verbs: [get, list, watch]
   - apiGroups: [apps]
     resources: [deployments]
@@ -35,4 +35,26 @@ subjects:
 roleRef:
   kind: Role
   name: {{ include "klyra.name" . }}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "klyra.name" . }}-nodes
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "klyra.name" . }}-nodes
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "klyra.name" . }}
+    namespace: {{ include "klyra.namespace" . }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "klyra.name" . }}-nodes
   apiGroup: rbac.authorization.k8s.io

@@ -13,10 +13,18 @@ spec:
       labels: {{ include "klyra.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "klyra.name" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
       containers:
         - name: klyra
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           args:
             - --config=/etc/klyra/config.yaml
             - --namespace={{ include "klyra.namespace" . }}
