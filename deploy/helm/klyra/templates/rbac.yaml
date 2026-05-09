@@ -102,3 +102,25 @@ roleRef:
   kind: ClusterRole
   name: {{ include "klyra.name" . }}-events
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "klyra.name" . }}-workloads
+rules:
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "klyra.name" . }}-workloads
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "klyra.name" . }}
+    namespace: {{ include "klyra.namespace" . }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "klyra.name" . }}-workloads
+  apiGroup: rbac.authorization.k8s.io

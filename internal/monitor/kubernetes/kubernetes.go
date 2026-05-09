@@ -106,6 +106,8 @@ func (m *k8sMonitor) Check(ctx context.Context) (state.CheckResult, error) {
 		return m.checkEvent(ctx, now)
 	case "pods_ready":
 		return m.checkPodsReady(ctx, now)
+	case "workloads_ready":
+		return m.checkWorkloadsReady(ctx, now)
 	default:
 		return state.CheckResult{
 			MonitorName: m.name,
@@ -445,6 +447,76 @@ func (m *k8sMonitor) checkPodsReady(ctx context.Context, now time.Time) (state.C
 		msg = fmt.Sprintf("not ready: %s", strings.Join(notReady, ", "))
 	} else {
 		msg = "all pods ready"
+	}
+
+	return state.CheckResult{
+		MonitorName: m.name,
+		Status:      state.CheckOK,
+		Value:       anyNotReady,
+		Message:     msg,
+		Timestamp:   now,
+	}, nil
+}
+
+// checkWorkloadsReady lists Deployments, StatefulSets, and DaemonSets in the configured
+// namespace, and returns Value=true if any workload has fewer ready replicas than desired.
+// Paused Deployments are skipped. The check field is used as an optional label selector.
+// When no namespace is set (empty string), checks cluster-wide.
+func (m *k8sMonitor) checkWorkloadsReady(ctx context.Context, now time.Time) (state.CheckResult, error) {
+	listOpts := metav1.ListOptions{}
+	if m.check != "" {
+		listOpts.LabelSelector = m.check
+	}
+
+	var notReady []string
+
+	deps, err := m.client.AppsV1().Deployments(m.namespace).List(ctx, listOpts)
+	if err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckError, Message: err.Error(), Timestamp: now}, nil
+	}
+	for _, d := range deps.Items {
+		if d.Spec.Paused {
+			continue
+		}
+		desired := int32(1)
+		if d.Spec.Replicas != nil {
+			desired = *d.Spec.Replicas
+		}
+		if d.Status.ReadyReplicas < desired {
+			notReady = append(notReady, fmt.Sprintf("deploy/%s (%d/%d)", d.Name, d.Status.ReadyReplicas, desired))
+		}
+	}
+
+	stss, err := m.client.AppsV1().StatefulSets(m.namespace).List(ctx, listOpts)
+	if err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckError, Message: err.Error(), Timestamp: now}, nil
+	}
+	for _, s := range stss.Items {
+		desired := int32(1)
+		if s.Spec.Replicas != nil {
+			desired = *s.Spec.Replicas
+		}
+		if s.Status.ReadyReplicas < desired {
+			notReady = append(notReady, fmt.Sprintf("sts/%s (%d/%d)", s.Name, s.Status.ReadyReplicas, desired))
+		}
+	}
+
+	dss, err := m.client.AppsV1().DaemonSets(m.namespace).List(ctx, listOpts)
+	if err != nil {
+		return state.CheckResult{MonitorName: m.name, Status: state.CheckError, Message: err.Error(), Timestamp: now}, nil
+	}
+	for _, ds := range dss.Items {
+		if ds.Status.NumberReady < ds.Status.DesiredNumberScheduled {
+			notReady = append(notReady, fmt.Sprintf("ds/%s (%d/%d)", ds.Name, ds.Status.NumberReady, ds.Status.DesiredNumberScheduled))
+		}
+	}
+
+	anyNotReady := len(notReady) > 0
+	var msg string
+	if anyNotReady {
+		msg = fmt.Sprintf("not ready: %s", strings.Join(notReady, ", "))
+	} else {
+		msg = "all workloads ready"
 	}
 
 	return state.CheckResult{
