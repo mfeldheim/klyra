@@ -8,14 +8,17 @@ export function Config() {
 
   if (!cfg) return <div className="main"><p style={{ color: '#8b949e' }}>Loading…</p></div>
 
+  const monitors = cfg.monitors ?? []
+  const actions = cfg.actions ?? []
+
   return (
     <div className="main">
       <div className="block">
-        <h3>Monitors ({cfg.monitors.length})</h3>
+        <h3>Monitors ({monitors.length})</h3>
         <table>
           <thead><tr><th>Name</th><th>Type</th><th>Interval</th><th>Threshold</th><th>Actions</th></tr></thead>
           <tbody>
-            {cfg.monitors.map(m => (
+            {monitors.map(m => (
               <tr key={m.name}>
                 <td>{m.name}</td>
                 <td><span className={`tag ${m.type}`}>{m.type}</span></td>
@@ -28,11 +31,11 @@ export function Config() {
         </table>
       </div>
       <div className="block">
-        <h3>Actions ({cfg.actions.length})</h3>
+        <h3>Actions ({actions.length})</h3>
         <table>
           <thead><tr><th>Name</th><th>Type</th></tr></thead>
           <tbody>
-            {cfg.actions.map(a => (
+            {actions.map(a => (
               <tr key={a.name}><td>{a.name}</td><td>{a.type}</td></tr>
             ))}
           </tbody>

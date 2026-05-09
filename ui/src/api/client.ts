@@ -40,8 +40,8 @@ export interface MonitorConfig {
 }
 
 export interface ConfigResponse {
-  monitors: MonitorConfig[]
-  actions: { name: string; type: string }[]
+  monitors?: MonitorConfig[]
+  actions?: { name: string; type: string }[]
 }
 
 async function get<T>(path: string): Promise<T> {
