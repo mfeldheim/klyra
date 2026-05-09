@@ -1,32 +1,35 @@
 package config
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Config struct {
-	Monitors []MonitorConfig `yaml:"monitors"`
-	Actions  []ActionConfig  `yaml:"actions"`
+	Monitors []MonitorConfig `yaml:"monitors" json:"monitors"`
+	Actions  []ActionConfig  `yaml:"actions" json:"actions"`
 }
 
 type MonitorConfig struct {
-	Name      string          `yaml:"name"`
-	Type      string          `yaml:"type"`
-	Interval  Duration        `yaml:"interval"`
-	Config    map[string]any  `yaml:"config"`
-	Threshold ThresholdConfig `yaml:"threshold"`
-	Actions   []string        `yaml:"actions"`
+	Name      string          `yaml:"name"      json:"name"`
+	Type      string          `yaml:"type"      json:"type"`
+	Interval  Duration        `yaml:"interval"  json:"interval"`
+	Config    map[string]any  `yaml:"config"    json:"config,omitempty"`
+	Threshold ThresholdConfig `yaml:"threshold" json:"threshold"`
+	Actions   []string        `yaml:"actions"   json:"actions"`
 }
 
 type ThresholdConfig struct {
-	Operator    string   `yaml:"operator"`
-	Value       any      `yaml:"value"`
-	For         Duration `yaml:"for"`
-	RecoveryFor Duration `yaml:"recovery_for"`
+	Operator    string   `yaml:"operator"     json:"operator"`
+	Value       any      `yaml:"value"        json:"value"`
+	For         Duration `yaml:"for"          json:"for"`
+	RecoveryFor Duration `yaml:"recovery_for" json:"recovery_for,omitempty"`
 }
 
 type ActionConfig struct {
-	Name   string         `yaml:"name"`
-	Type   string         `yaml:"type"`
-	Config map[string]any `yaml:"config"`
+	Name   string         `yaml:"name"   json:"name"`
+	Type   string         `yaml:"type"   json:"type"`
+	Config map[string]any `yaml:"config" json:"-"`
 }
 
 // Duration wraps time.Duration for YAML unmarshalling (e.g. "30s", "2m").
@@ -46,4 +49,11 @@ func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	d.Duration = dur
 	return nil
+}
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	if d.Duration == 0 {
+		return []byte("null"), nil
+	}
+	return json.Marshal(d.Duration.String())
 }
