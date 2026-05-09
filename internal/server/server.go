@@ -23,6 +23,7 @@ func New(h *Handlers, uiFS fs.FS) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/api/me", Me)
 	mux.HandleFunc("/api/status", s.handlers.Status)
 	mux.HandleFunc("/api/history", s.handlers.History)
 	mux.HandleFunc("/api/config", s.handlers.Config)

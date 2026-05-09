@@ -95,3 +95,19 @@ func (h *Handlers) DeleteSilence(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// Me responds with the authenticated user extracted from oauth2-proxy headers.
+func Me(w http.ResponseWriter, r *http.Request) {
+	user := ""
+	for _, hdr := range []string{
+		"X-Auth-Request-Preferred-Username",
+		"X-Auth-Request-User",
+		"X-Forwarded-User",
+	} {
+		if v := r.Header.Get(hdr); v != "" {
+			user = v
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"user": user})
+}

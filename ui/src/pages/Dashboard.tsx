@@ -7,6 +7,8 @@ export function Dashboard() {
   const [alarms, setAlarms] = useState<Record<string, AlarmState>>({})
   const [history, setHistory] = useState<HistoryEvent[]>([])
   const [cfg, setCfg] = useState<ConfigResponse | null>(null)
+  const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set())
+  const [activeStatuses, setActiveStatuses] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const load = () => {
@@ -26,6 +28,47 @@ export function Dashboard() {
   const firing = all.filter(a => a.status === 'FIRING')
   const ok = all.filter(a => a.status === 'OK')
   const unknown = all.filter(a => a.status === 'UNKNOWN')
+
+  // Collect distinct types present in alarms
+  const typeCounts: Record<string, number> = {}
+  all.forEach(a => {
+    const t = typeMap[a.monitorName]
+    if (t) typeCounts[t] = (typeCounts[t] ?? 0) + 1
+  })
+
+  const statusCounts: Record<string, number> = {
+    FIRING: firing.length,
+    OK: ok.length,
+    UNKNOWN: unknown.length,
+  }
+
+  function toggleType(t: string) {
+    setActiveTypes(prev => {
+      const next = new Set(prev)
+      next.has(t) ? next.delete(t) : next.add(t)
+      return next
+    })
+  }
+
+  function toggleStatus(s: string) {
+    setActiveStatuses(prev => {
+      const next = new Set(prev)
+      next.has(s) ? next.delete(s) : next.add(s)
+      return next
+    })
+  }
+
+  // Apply filters: OR within group, AND across groups
+  const filtered = all.filter(a => {
+    const typeOk = activeTypes.size === 0 || activeTypes.has(typeMap[a.monitorName] ?? '')
+    const statusOk = activeStatuses.size === 0 || activeStatuses.has(a.status)
+    return typeOk && statusOk
+  })
+
+  const filteredFiring = filtered.filter(a => a.status === 'FIRING')
+  const filteredOk = filtered.filter(a => a.status === 'OK')
+
+  const hasTypeChips = Object.keys(typeCounts).length > 0
 
   return (
     <div className="main">
@@ -57,17 +100,52 @@ export function Dashboard() {
         </div>
       )}
 
-      {firing.length > 0 && (
+      {all.length > 0 && (
+        <>
+          {hasTypeChips && (
+            <div className="filters">
+              {Object.entries(typeCounts).map(([t, count]) => (
+                <span
+                  key={t}
+                  className={`chip${activeTypes.has(t) ? ' active' : ''}`}
+                  onClick={() => toggleType(t)}
+                >
+                  <span className="chip-dot" />
+                  {t} {count}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="filters">
+            {(['FIRING', 'OK', 'UNKNOWN'] as const).map(s => {
+              const count = statusCounts[s]
+              if (count === 0) return null
+              return (
+                <span
+                  key={s}
+                  className={`chip ${s.toLowerCase()}${activeStatuses.has(s) ? ' active' : ''}`}
+                  onClick={() => toggleStatus(s)}
+                >
+                  <span className="chip-dot" />
+                  {s} {count}
+                </span>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {filteredFiring.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <div className="group-header">🔴 Firing ({firing.length})</div>
-          {firing.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
+          <div className="group-header">🔴 Firing ({filteredFiring.length})</div>
+          {filteredFiring.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
         </div>
       )}
 
-      {ok.length > 0 && (
+      {filteredOk.length > 0 && (
         <div>
-          <div className="group-header">✅ OK ({ok.length})</div>
-          {ok.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
+          <div className="group-header">✅ OK ({filteredOk.length})</div>
+          {filteredOk.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
         </div>
       )}
     </div>

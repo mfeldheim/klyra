@@ -44,6 +44,8 @@ export interface ConfigResponse {
   actions?: { name: string; type: string }[]
 }
 
+export interface MeResponse { user: string }
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) throw new Error(`${path}: ${res.status}`)
@@ -73,4 +75,5 @@ export const api = {
   createSilence: (monitor: string, duration: string, reason: string) =>
     post<Silence>('/api/silences', { monitor, duration, reason }),
   deleteSilence: (id: string) => del(`/api/silences/${id}`),
+  me: () => get<MeResponse>('/api/me'),
 }

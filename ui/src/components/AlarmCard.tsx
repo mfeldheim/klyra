@@ -16,6 +16,38 @@ function firedFor(iso?: string): string {
   return `firing for ${Math.floor(diff / 3600)}h`
 }
 
+function typeIcon(type: string): JSX.Element {
+  switch (type) {
+    case 'http':
+      return (
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+          <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+          <path d="M8 1c-1.5 2-2.5 4.5-2.5 7s1 5 2.5 7M8 1c1.5 2 2.5 4.5 2.5 7s-1 5-2.5 7M1 8h14" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+        </svg>
+      )
+    case 'kubernetes':
+      return (
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+          <path d="M8 1L14.5 4.5v7L8 15 1.5 11.5v-7z" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+          <circle cx="8" cy="8" r="1.5"/>
+        </svg>
+      )
+    case 'prometheus':
+      return (
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+          <path d="M8 2c0 3-3 4-3 7a3 3 0 0 0 6 0c0-1.5-1-2.5-1-4 0 0-1 1-1 2.5C8.5 9 7 8 7 6.5 7 5 8 2 8 2z"/>
+        </svg>
+      )
+    default:
+      return (
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+          <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+          <text x="8" y="12" textAnchor="middle" fontSize="9">?</text>
+        </svg>
+      )
+  }
+}
+
 export function AlarmCard({ alarm, monitorType }: { alarm: AlarmState; monitorType?: string }) {
   return (
     <div className={`card ${alarm.status.toLowerCase()}`}>
@@ -24,7 +56,11 @@ export function AlarmCard({ alarm, monitorType }: { alarm: AlarmState; monitorTy
         <div className="card-meta">
           <StatusBadge status={alarm.status} />
           {alarm.message && <> · {alarm.message}</>}
-          {monitorType && <> · <span className={`tag ${monitorType}`}>{monitorType}</span></>}
+          {monitorType && (
+            <> · <span className={`tag ${monitorType}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {typeIcon(monitorType)}{monitorType}
+            </span></>
+          )}
         </div>
       </div>
       <div className="card-right">
