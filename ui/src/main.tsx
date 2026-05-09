@@ -1,8 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { App } from './App'
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <div>Klyra loading…</div>
-  </StrictMode>
+  <StrictMode><App /></StrictMode>
 )
