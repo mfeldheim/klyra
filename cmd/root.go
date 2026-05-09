@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -84,18 +85,16 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	h := server.NewHandlers(st, cfg)
-	srv := server.New(h, server.UIFileSystem()) // UI fs injected at build time via embed.go
+	srv := server.New(h, server.UIFileSystem())
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- srv.ListenAndServe(ctx, flagAddr)
 	}()
 
-	// Wait briefly for bind failure
 	select {
 	case err := <-serverErr:
 		return fmt.Errorf("server: %w", err)
 	case <-time.After(100 * time.Millisecond):
-		// bound successfully
 	}
 
 	eng, err := engine.New(cfg, st, k8sClient, flagNamespace)
@@ -103,17 +102,41 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// isLeader guards the state reader: when this pod is the leader, the engine
+	// owns in-memory state and we must not overwrite it with ConfigMap reads.
+	var isLeader atomic.Bool
+
+	// State reader: non-leader pods refresh from ConfigMap every 10s so the
+	// API serves fresh data without running the engine themselves.
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if !isLeader.Load() {
+					if err := engine.LoadFromConfigMap(ctx, st, k8sClient, flagNamespace, "klyra-state"); err != nil {
+						log.Printf("state reader: %v", err)
+					}
+				}
+			}
+		}
+	}()
+
 	leader.Run(ctx, k8sClient, flagNamespace, flagLeaseName,
 		func(leaderCtx context.Context) {
+			isLeader.Store(true)
 			log.Println("leader: starting engine")
 			if err := eng.Run(leaderCtx); err != nil {
 				log.Printf("engine error: %v", err)
 			}
+			isLeader.Store(false)
 		},
 		func() { log.Println("leader: engine stopped") },
 	)
 
-	// Wait for the HTTP server to complete its graceful shutdown.
 	if err := <-serverErr; err != nil {
 		log.Printf("server shutdown: %v", err)
 	}
