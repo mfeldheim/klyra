@@ -24,6 +24,7 @@ type k8sMonitor struct {
 	namespace string
 	resName   string // resource name; for events, reused as reason filter
 	check     string
+	window    time.Duration // for events: only consider events within this window
 	client    kubernetes.Interface
 }
 
@@ -47,12 +48,24 @@ func NewWithClient(name string, cfg map[string]any, client kubernetes.Interface)
 	namespace, _ := cfgString(cfg, "namespace", false)
 	resName, _ := cfgString(cfg, "name", false)
 
+	var window time.Duration
+	if v, ok := cfg["window"]; ok {
+		if s, ok := v.(string); ok && s != "" {
+			d, err := time.ParseDuration(s)
+			if err != nil {
+				return nil, fmt.Errorf("kubernetes monitor %q: invalid 'window': %w", name, err)
+			}
+			window = d
+		}
+	}
+
 	return &k8sMonitor{
 		name:      name,
 		kind:      kind,
 		namespace: namespace,
 		resName:   resName,
 		check:     check,
+		window:    window,
 		client:    client,
 	}, nil
 }
@@ -307,6 +320,22 @@ func (m *k8sMonitor) checkEvent(ctx context.Context, now time.Time) (state.Check
 	}
 
 	events := list.Items
+
+	// Filter by recency when a window is configured.
+	if m.window > 0 {
+		cutoff := now.Add(-m.window)
+		var recent []corev1.Event
+		for _, ev := range events {
+			ts := ev.LastTimestamp.Time
+			if ts.IsZero() && ev.EventTime.Time != (time.Time{}) {
+				ts = ev.EventTime.Time
+			}
+			if ts.After(cutoff) {
+				recent = append(recent, ev)
+			}
+		}
+		events = recent
+	}
 
 	// Filter by reason when resName is provided.
 	if m.resName != "" {
