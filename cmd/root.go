@@ -3,10 +3,12 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -81,11 +83,18 @@ func run(cmd *cobra.Command, args []string) error {
 
 	h := server.NewHandlers(st, cfg)
 	srv := server.New(h, nil) // UI fs injected at build time via embed.go
+	serverErr := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(flagAddr); err != nil {
-			log.Printf("server error: %v", err)
-		}
+		serverErr <- srv.ListenAndServe(ctx, flagAddr)
 	}()
+
+	// Wait briefly for bind failure
+	select {
+	case err := <-serverErr:
+		return fmt.Errorf("server: %w", err)
+	case <-time.After(100 * time.Millisecond):
+		// bound successfully
+	}
 
 	eng, err := engine.New(cfg, st, k8sClient, flagNamespace)
 	if err != nil {

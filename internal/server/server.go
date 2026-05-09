@@ -2,10 +2,13 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Server struct {
@@ -49,9 +52,35 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func (s *Server) ListenAndServe(addr string) error {
+func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      s.Handler(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  90 * time.Second,
+	}
 	log.Printf("server: listening on %s", addr)
-	return http.ListenAndServe(addr, s.Handler())
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	}
 }
 
 // spaHandler serves static files and falls back to index.html for SPA routing.
