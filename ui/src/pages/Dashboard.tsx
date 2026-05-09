@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { api, type AlarmState, type HistoryEvent, type ConfigResponse } from '../api/client'
 import { AlarmCard } from '../components/AlarmCard'
+import { GroupTile } from '../components/GroupTile'
 import { Timeline } from '../components/Timeline'
 
 export function Dashboard() {
   const [alarms, setAlarms] = useState<Record<string, AlarmState>>({})
   const [history, setHistory] = useState<HistoryEvent[]>([])
   const [cfg, setCfg] = useState<ConfigResponse | null>(null)
-  const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set())
-  const [activeStatuses, setActiveStatuses] = useState<Set<string>>(new Set())
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<string | null>(null)
 
   useEffect(() => {
@@ -30,49 +30,49 @@ export function Dashboard() {
   const ok = all.filter(a => a.status === 'OK')
   const unknown = all.filter(a => a.status === 'UNKNOWN')
 
-  // Collect distinct types present in alarms
-  const typeCounts: Record<string, number> = {}
+  // Build ordered group list from config order, ungrouped last.
+  const groupOrder: string[] = []
+  cfg?.monitors?.forEach(m => {
+    const g = m.group ?? ''
+    if (!groupOrder.includes(g)) groupOrder.push(g)
+  })
+  // Also catch any groups that appear in alarms but not config (edge case).
   all.forEach(a => {
-    const t = typeMap[a.monitorName]
-    if (t) typeCounts[t] = (typeCounts[t] ?? 0) + 1
+    const g = a.group ?? ''
+    if (!groupOrder.includes(g)) groupOrder.push(g)
   })
-
-  const statusCounts: Record<string, number> = {
-    FIRING: firing.length,
-    OK: ok.length,
-    UNKNOWN: unknown.length,
+  // Move '' (ungrouped) to the end.
+  const ungroupedIdx = groupOrder.indexOf('')
+  if (ungroupedIdx !== -1) {
+    groupOrder.splice(ungroupedIdx, 1)
+    groupOrder.push('')
   }
 
-  function toggleType(t: string) {
-    setActiveTypes(prev => {
+  // Bucket alarms by group, firing-first within each group.
+  const grouped: Record<string, AlarmState[]> = {}
+  all.forEach(a => {
+    const g = a.group ?? ''
+    if (!grouped[g]) grouped[g] = []
+    grouped[g].push(a)
+  })
+  const statusOrder = { FIRING: 0, UNKNOWN: 1, OK: 2 } as const
+  Object.values(grouped).forEach(arr =>
+    arr.sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3))
+  )
+
+  function toggleGroup(name: string) {
+    setOpenGroups(prev => {
       const next = new Set(prev)
-      next.has(t) ? next.delete(t) : next.add(t)
+      next.has(name) ? next.delete(name) : next.add(name)
       return next
     })
   }
 
-  function toggleStatus(s: string) {
-    setActiveStatuses(prev => {
-      const next = new Set(prev)
-      next.has(s) ? next.delete(s) : next.add(s)
-      return next
-    })
-  }
-
-  // Apply filters: OR within group, AND across groups
-  const filtered = all.filter(a => {
-    const typeOk = activeTypes.size === 0 || activeTypes.has(typeMap[a.monitorName] ?? '')
-    const statusOk = activeStatuses.size === 0 || activeStatuses.has(a.status)
-    return typeOk && statusOk
-  })
-
-  const filteredFiring = filtered.filter(a => a.status === 'FIRING')
-  const filteredOk = filtered.filter(a => a.status === 'OK')
-
-  const hasTypeChips = Object.keys(typeCounts).length > 0
+  const visibleGroups = groupOrder.filter(g => grouped[g]?.length)
 
   return (
     <div className="main">
+      {/* Summary cards */}
       <div className="summary">
         <div className={`summary-card${firing.length ? ' firing' : ''}`}>
           <div className={`summary-num ${firing.length ? 'red' : 'gray'}`}>{firing.length}</div>
@@ -92,6 +92,7 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* 24h timeline */}
       {all.length > 0 && (
         <div className="block" style={{ marginBottom: 20 }}>
           <h3>24h overview</h3>
@@ -101,70 +102,42 @@ export function Dashboard() {
         </div>
       )}
 
-      {all.length > 0 && (
-        <>
-          {hasTypeChips && (
-            <div className="filters">
-              {Object.entries(typeCounts).map(([t, count]) => (
-                <span
-                  key={t}
-                  className={`chip${activeTypes.has(t) ? ' active' : ''}`}
-                  onClick={() => toggleType(t)}
-                >
-                  <span className="chip-dot" />
-                  {t} {count}
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="filters">
-            {(['FIRING', 'OK', 'UNKNOWN'] as const).map(s => {
-              const count = statusCounts[s]
-              if (count === 0) return null
-              return (
-                <span
-                  key={s}
-                  className={`chip ${s.toLowerCase()}${activeStatuses.has(s) ? ' active' : ''}`}
-                  onClick={() => toggleStatus(s)}
-                >
-                  <span className="chip-dot" />
-                  {s} {count}
-                </span>
-              )
-            })}
+      {/* Group tile grid */}
+      {visibleGroups.length > 0 && (
+        <div className="group-grid">
+          {visibleGroups.map(g => (
+            <GroupTile
+              key={g || '__ungrouped__'}
+              name={g || 'ungrouped'}
+              alarms={grouped[g]}
+              typeMap={typeMap}
+              active={openGroups.has(g)}
+              onClick={() => toggleGroup(g)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Drill-down panels — one per open group, in order */}
+      {visibleGroups.filter(g => openGroups.has(g)).map(g => (
+        <div key={g || '__ungrouped__'} className="drill-panel">
+          <div className="drill-header">
+            <div className="drill-header-name">{g || 'ungrouped'}</div>
+            <button className="drill-header-close" onClick={() => toggleGroup(g)}>×</button>
           </div>
-        </>
-      )}
-
-      {filteredFiring.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div className="group-header">🔴 Firing ({filteredFiring.length})</div>
-          {filteredFiring.map(a => (
-            <AlarmCard
-              key={a.monitorName}
-              alarm={a}
-              monitorType={typeMap[a.monitorName]}
-              selected={selected === a.monitorName}
-              onSelect={a2 => setSelected(prev => prev === a2.monitorName ? null : a2.monitorName)}
-            />
-          ))}
+          <div className="drill-body">
+            {grouped[g].map(a => (
+              <AlarmCard
+                key={a.monitorName}
+                alarm={a}
+                monitorType={typeMap[a.monitorName]}
+                selected={selected === a.monitorName}
+                onSelect={a2 => setSelected(prev => prev === a2.monitorName ? null : a2.monitorName)}
+              />
+            ))}
+          </div>
         </div>
-      )}
-
-      {filteredOk.length > 0 && (
-        <div>
-          <div className="group-header">✅ OK ({filteredOk.length})</div>
-          {filteredOk.map(a => (
-            <AlarmCard
-              key={a.monitorName}
-              alarm={a}
-              monitorType={typeMap[a.monitorName]}
-              selected={selected === a.monitorName}
-              onSelect={a2 => setSelected(prev => prev === a2.monitorName ? null : a2.monitorName)}
-            />
-          ))}
-        </div>
-      )}
+      ))}
     </div>
   )
 }

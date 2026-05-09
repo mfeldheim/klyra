@@ -96,16 +96,43 @@ body {
   box-shadow: 0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 .group-tile:hover {
-  border-color: rgba(74,144,217,0.5);
-  background: rgba(74,144,217,0.06);
   box-shadow: 0 6px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
 }
-.group-tile.has-firing { border-color: rgba(244,67,54,0.3); background: rgba(244,67,54,0.04); }
-.group-tile.has-firing:hover { border-color: rgba(244,67,54,0.6); background: rgba(244,67,54,0.07); }
+/* Worst-status glow variants */
+.group-tile--ok {
+  border-color: rgba(76,175,80,0.25);
+  background: rgba(76,175,80,0.04);
+  box-shadow: 0 4px 24px rgba(76,175,80,0.12), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.group-tile--ok:hover {
+  border-color: rgba(76,175,80,0.5);
+  background: rgba(76,175,80,0.07);
+  box-shadow: 0 6px 32px rgba(76,175,80,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.group-tile--unknown {
+  border-color: rgba(255,152,0,0.3);
+  background: rgba(255,152,0,0.04);
+  box-shadow: 0 4px 24px rgba(255,152,0,0.14), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.group-tile--unknown:hover {
+  border-color: rgba(255,152,0,0.55);
+  background: rgba(255,152,0,0.07);
+  box-shadow: 0 6px 32px rgba(255,152,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.group-tile--firing {
+  border-color: rgba(244,67,54,0.35);
+  background: rgba(244,67,54,0.05);
+  box-shadow: 0 4px 24px rgba(244,67,54,0.18), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.group-tile--firing:hover {
+  border-color: rgba(244,67,54,0.65);
+  background: rgba(244,67,54,0.09);
+  box-shadow: 0 6px 32px rgba(244,67,54,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+}
 .group-tile.active {
   border-color: rgba(74,144,217,0.6) !important;
   background: rgba(74,144,217,0.08) !important;
-  box-shadow: 0 6px 32px rgba(74,144,217,0.15), inset 0 1px 0 rgba(255,255,255,0.1);
+  box-shadow: 0 6px 32px rgba(74,144,217,0.2), inset 0 1px 0 rgba(255,255,255,0.1) !important;
 }
 
 .group-tile-name {
@@ -141,7 +168,7 @@ body {
   background: rgba(255,152,0,0.15); border: 1px solid rgba(255,152,0,0.35); color: #ffb74d;
   box-shadow: 0 2px 12px rgba(255,152,0,0.15), inset 0 1px 0 rgba(255,255,255,0.08);
 }
-.monitor-tile.ok:hover    { box-shadow: 0 4px 20px rgba(76,175,80,0.45),  inset 0 1px 0 rgba(255,255,255,0.12); border-color: rgba(76,175,80,0.6); }
+.monitor-tile.ok:hover     { box-shadow: 0 4px 20px rgba(76,175,80,0.45),  inset 0 1px 0 rgba(255,255,255,0.12); border-color: rgba(76,175,80,0.6); }
 .monitor-tile.firing:hover { box-shadow: 0 4px 20px rgba(244,67,54,0.45), inset 0 1px 0 rgba(255,255,255,0.12); border-color: rgba(244,67,54,0.65); }
 .monitor-tile.unknown:hover{ box-shadow: 0 4px 20px rgba(255,152,0,0.4),  inset 0 1px 0 rgba(255,255,255,0.12); border-color: rgba(255,152,0,0.6); }
 
@@ -149,6 +176,18 @@ body {
   font-size: 9px; font-weight: 500; opacity: 0.85;
   max-width: 54px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;
 }
+
+/* ── Card icon: rounded square (app-icon style) ───── */
+.card-icon {
+  width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; line-height: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.card.firing .card-icon  { background: rgba(244,67,54,0.12);  border-color: rgba(244,67,54,0.25); }
+.card.ok     .card-icon  { background: rgba(76,175,80,0.10);  border-color: rgba(76,175,80,0.2); }
+.card.unknown .card-icon { background: rgba(255,152,0,0.10);  border-color: rgba(255,152,0,0.2); }
 
 /* ── Drill-down panel ─────────────────────────────── */
 .drill-panel {

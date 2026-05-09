@@ -41,12 +41,18 @@ function typeIcon(type: string): JSX.Element {
   }
 }
 
+function worstStatus(alarms: AlarmState[]): 'firing' | 'unknown' | 'ok' {
+  if (alarms.some(a => a.status === 'FIRING')) return 'firing'
+  if (alarms.some(a => a.status === 'UNKNOWN')) return 'unknown'
+  return 'ok'
+}
+
 export function GroupTile({ name, alarms, typeMap, active, onClick }: GroupTileProps) {
-  const hasFiring = alarms.some(a => a.status === 'FIRING')
+  const status = worstStatus(alarms)
 
   return (
     <div
-      className={`group-tile${hasFiring ? ' has-firing' : ''}${active ? ' active' : ''}`}
+      className={`group-tile group-tile--${status}${active ? ' active' : ''}`}
       onClick={onClick}
     >
       <div className="group-tile-name">{name}</div>
