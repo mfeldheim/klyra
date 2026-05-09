@@ -14,13 +14,14 @@ import (
 )
 
 type testCase struct {
-	name       string
-	cfg        map[string]any
-	event      state.AlarmEvent
-	wantTitle  string
-	wantInMsg  []string
-	wantStatus int
-	wantErr    bool
+	name         string
+	cfg          map[string]any
+	event        state.AlarmEvent
+	wantTitle    string
+	wantInMsg    []string
+	wantPriority string
+	wantStatus   int
+	wantErr      bool
 }
 
 func TestPushoverAction(t *testing.T) {
@@ -41,15 +42,17 @@ func TestPushoverAction(t *testing.T) {
 				Value:       false,
 				FiredAt:     time.Now(),
 			},
-			wantTitle: "FIRING: stadtbranchenbuch-http",
-			wantInMsg: []string{"stadtbranchenbuch-http", "FIRING", "false"},
-			wantStatus: http.StatusOK,
+			wantTitle:    "FIRING: stadtbranchenbuch-http",
+			wantInMsg:    []string{"stadtbranchenbuch-http", "FIRING", "false"},
+			wantPriority: "1",
+			wantStatus:   http.StatusOK,
 		},
 		{
-			name: "RESOLVED notification contains resolved and duration",
+			name: "RESOLVED notification uses priority 0 regardless of configured priority",
 			cfg: map[string]any{
-				"token": "app-token",
-				"user":  "user-key",
+				"token":    "app-token",
+				"user":     "user-key",
+				"priority": float64(1),
 			},
 			event: state.AlarmEvent{
 				MonitorName: "stadtbranchenbuch-http",
@@ -57,9 +60,10 @@ func TestPushoverAction(t *testing.T) {
 				Value:       true,
 				FiredAt:     firedAt,
 			},
-			wantTitle: "RESOLVED: stadtbranchenbuch-http",
-			wantInMsg: []string{"resolved", "Duration:"},
-			wantStatus: http.StatusOK,
+			wantTitle:    "RESOLVED: stadtbranchenbuch-http",
+			wantInMsg:    []string{"resolved", "Duration:"},
+			wantPriority: "0",
+			wantStatus:   http.StatusOK,
 		},
 		{
 			name: "server error returns descriptive error",
@@ -149,6 +153,12 @@ func TestPushoverAction(t *testing.T) {
 			for _, want := range tc.wantInMsg {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message %q missing %q", msg, want)
+				}
+			}
+
+			if tc.wantPriority != "" {
+				if got := capturedForm.Get("priority"); got != tc.wantPriority {
+					t.Errorf("priority: got %q, want %q", got, tc.wantPriority)
 				}
 			}
 

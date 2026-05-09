@@ -89,12 +89,17 @@ func (a *pushoverAction) Name() string {
 func (a *pushoverAction) Fire(ctx context.Context, ev state.AlarmEvent) error {
 	title, message := buildNotification(ev)
 
+	priority := a.priority
+	if ev.Transition == state.TransitionResolved {
+		priority = 0
+	}
+
 	form := url.Values{}
 	form.Set("token", a.token)
 	form.Set("user", a.user)
 	form.Set("title", title)
 	form.Set("message", message)
-	form.Set("priority", strconv.Itoa(a.priority))
+	form.Set("priority", strconv.Itoa(priority))
 	if a.dashboardURL != "" {
 		form.Set("url", a.dashboardURL)
 		form.Set("url_title", "Open Klyra Dashboard")
