@@ -42,10 +42,7 @@ func NewWithClient(name string, cfg map[string]any, client kubernetes.Interface)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes monitor %q: %w", name, err)
 	}
-	check, err := cfgString(cfg, "check", true)
-	if err != nil {
-		return nil, fmt.Errorf("kubernetes monitor %q: %w", name, err)
-	}
+	check, _ := cfgString(cfg, "check", false)
 	namespace, _ := cfgString(cfg, "namespace", false)
 	resName, _ := cfgString(cfg, "name", false)
 
@@ -100,6 +97,8 @@ func (m *k8sMonitor) Check(ctx context.Context) (state.CheckResult, error) {
 		return m.checkNode(ctx, now)
 	case "event":
 		return m.checkEvent(ctx, now)
+	case "pods_ready":
+		return m.checkPodsReady(ctx, now)
 	default:
 		return state.CheckResult{
 			MonitorName: m.name,
@@ -386,6 +385,62 @@ func (m *k8sMonitor) checkEvent(ctx context.Context, now time.Time) (state.Check
 		MonitorName: m.name,
 		Status:      state.CheckOK,
 		Value:       found,
+		Message:     msg,
+		Timestamp:   now,
+	}, nil
+}
+
+// checkPodsReady lists pods in the configured namespace, skipping completed and
+// terminating pods, and returns Value=true if any active pod is not Ready.
+// The check field is used as an optional label selector.
+func (m *k8sMonitor) checkPodsReady(ctx context.Context, now time.Time) (state.CheckResult, error) {
+	listOpts := metav1.ListOptions{}
+	if m.check != "" {
+		listOpts.LabelSelector = m.check
+	}
+
+	list, err := m.client.CoreV1().Pods(m.namespace).List(ctx, listOpts)
+	if err != nil {
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckError,
+			Message:     err.Error(),
+			Timestamp:   now,
+		}, nil
+	}
+
+	var notReady []string
+	for _, pod := range list.Items {
+		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		ready := false
+		for _, c := range pod.Status.Conditions {
+			if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+				ready = true
+				break
+			}
+		}
+		if !ready {
+			notReady = append(notReady, pod.Name)
+		}
+	}
+
+	anyNotReady := len(notReady) > 0
+	var msg string
+	if anyNotReady {
+		msg = fmt.Sprintf("not ready: %s", strings.Join(notReady, ", "))
+	} else {
+		msg = "all pods ready"
+	}
+
+	return state.CheckResult{
+		MonitorName: m.name,
+		Status:      state.CheckOK,
+		Value:       anyNotReady,
 		Message:     msg,
 		Timestamp:   now,
 	}, nil

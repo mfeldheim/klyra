@@ -2,6 +2,7 @@ package k8smon_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -84,5 +85,171 @@ func TestNodeReadyCondition(t *testing.T) {
 	}
 	if r.Timestamp.IsZero() {
 		t.Error("expected non-zero Timestamp")
+	}
+}
+
+func TestPodsReadyAllReady(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "web-1", Namespace: "default"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	client.CoreV1().Pods("default").Create(context.Background(), pod, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "pods_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != state.CheckOK {
+		t.Errorf("expected OK, got %s: %s", r.Status, r.Message)
+	}
+	if r.Value != false {
+		t.Errorf("expected Value=false (all ready), got %v", r.Value)
+	}
+}
+
+func TestPodsReadySomeNotReady(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	readyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "web-1", Namespace: "default"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	notReadyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "web-2", Namespace: "default"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+			},
+		},
+	}
+	client.CoreV1().Pods("default").Create(context.Background(), readyPod, metav1.CreateOptions{})
+	client.CoreV1().Pods("default").Create(context.Background(), notReadyPod, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "pods_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != true {
+		t.Errorf("expected Value=true (some not ready), got %v", r.Value)
+	}
+	if !strings.Contains(r.Message, "web-2") {
+		t.Errorf("expected not-ready pod name in message, got %q", r.Message)
+	}
+}
+
+func TestPodsReadySkipsCompletedAndTerminating(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	now := metav1.Now()
+
+	succeededPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "job-1", Namespace: "default"},
+		Status:     corev1.PodStatus{Phase: corev1.PodSucceeded},
+	}
+	failedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "job-2", Namespace: "default"},
+		Status:     corev1.PodStatus{Phase: corev1.PodFailed},
+	}
+	terminatingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "web-3",
+			Namespace:         "default",
+			DeletionTimestamp: &now,
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	client.CoreV1().Pods("default").Create(context.Background(), succeededPod, metav1.CreateOptions{})
+	client.CoreV1().Pods("default").Create(context.Background(), failedPod, metav1.CreateOptions{})
+	client.CoreV1().Pods("default").Create(context.Background(), terminatingPod, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "pods_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != false {
+		t.Errorf("expected Value=false (completed/terminating skipped), got %v: %s", r.Value, r.Message)
+	}
+}
+
+func TestPodsReadyLabelSelector(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	matchingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "api"},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+			},
+		},
+	}
+	otherPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "worker-1",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "worker"},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	client.CoreV1().Pods("default").Create(context.Background(), matchingPod, metav1.CreateOptions{})
+	client.CoreV1().Pods("default").Create(context.Background(), otherPod, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "pods_ready",
+		"namespace": "default",
+		"check":     "app=api",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != true {
+		t.Errorf("expected Value=true (api pod not ready), got %v", r.Value)
 	}
 }
