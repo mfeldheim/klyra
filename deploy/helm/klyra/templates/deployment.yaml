@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "klyra.name" . }}
+  namespace: {{ include "klyra.namespace" . }}
+  labels: {{ include "klyra.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{ include "klyra.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "klyra.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "klyra.name" . }}
+      containers:
+        - name: klyra
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config=/etc/klyra/config.yaml
+            - --namespace={{ include "klyra.namespace" . }}
+            - --lease-name={{ .Values.leaderElection.leaseName }}
+            - --addr=:8080
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: config
+              mountPath: /etc/klyra
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "klyra.name" . }}-config
