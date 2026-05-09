@@ -1,3 +1,5 @@
+import type { JSX } from 'react'
+
 export function typeIcon(type: string, size = 16): JSX.Element {
   switch (type) {
     case 'http':
