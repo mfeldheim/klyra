@@ -37,7 +37,8 @@ a { color: inherit; text-decoration: none; }
 .card.clickable:hover { border-color: #4a90d9; }
 .card.selected { border-color: #4a90d9; background: #111d2c; }
 .card.firing { border-left: 3px solid #f44336; background: #1a1015; }
-.card.ok { border-left: 3px solid #4caf50; }
+.card.ok { border-left: 3px solid #4caf50; background: #0f1a0f; }
+.card.ok.selected { background: #142414; }
 .card.unknown { border-left: 3px solid #ff9800; }
 .card.firing.selected { background: #1f1018; }
 .card-detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid #21262d; display: flex; flex-direction: column; gap: 5px; }
