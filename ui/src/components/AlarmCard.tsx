@@ -1,5 +1,6 @@
 import type { AlarmState } from '../api/client'
 import { StatusBadge } from './StatusBadge'
+import { typeIcon } from '../utils/typeIcon'
 
 function timeAgo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
@@ -26,39 +27,6 @@ function firedDuration(iso?: string): string {
   return `${h}h ${m}m`
 }
 
-function typeIcon(type: string): JSX.Element {
-  switch (type) {
-    case 'http':
-      return (
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
-          <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-          <path d="M8 1c-1.5 2-2.5 4.5-2.5 7s1 5 2.5 7M8 1c1.5 2 2.5 4.5 2.5 7s-1 5-2.5 7M1 8h14" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-        </svg>
-      )
-    case 'kubernetes':
-      return (
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
-          <path d="M8 1L14.5 4.5v7L8 15 1.5 11.5v-7z" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-          <circle cx="8" cy="8" r="1.5"/>
-        </svg>
-      )
-    case 'prometheus':
-    case 'prometheus_scrape':
-      return (
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
-          <path d="M8 2c0 3-3 4-3 7a3 3 0 0 0 6 0c0-1.5-1-2.5-1-4 0 0-1 1-1 2.5C8.5 9 7 8 7 6.5 7 5 8 2 8 2z"/>
-        </svg>
-      )
-    default:
-      return (
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
-          <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-          <text x="8" y="12" textAnchor="middle" fontSize="9">?</text>
-        </svg>
-      )
-  }
-}
-
 interface AlarmCardProps {
   alarm: AlarmState
   monitorType?: string
@@ -82,7 +50,7 @@ export function AlarmCard({ alarm, monitorType, selected, onSelect }: AlarmCardP
           {alarm.message && <> · {alarm.message}</>}
           {monitorType && !alarm.icon && (
             <> · <span className={`tag ${monitorType}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              {typeIcon(monitorType)}{monitorType}
+              {typeIcon(monitorType, 10)}{monitorType}
             </span></>
           )}
           {monitorType && alarm.icon && (

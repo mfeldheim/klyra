@@ -123,7 +123,7 @@ export function Dashboard() {
         <div key={g || '__ungrouped__'} className="drill-panel">
           <div className="drill-header">
             <div className="drill-header-name">{g || 'ungrouped'}</div>
-            <button className="drill-header-close" onClick={() => toggleGroup(g)}>×</button>
+            <button className="drill-header-close" onClick={() => toggleGroup(g)} aria-label="Close">×</button>
           </div>
           <div className="drill-body">
             {grouped[g].map(a => (
