@@ -71,4 +71,32 @@ func TestHTTPActionFiresWithNtfyHeaders(t *testing.T) {
 	if payload["status"] != "FIRING" {
 		t.Errorf("expected status FIRING, got %v", payload["status"])
 	}
+	if gotReq.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", gotReq.Header.Get("Content-Type"))
+	}
+	firedAtStr, _ := payload["fired_at"].(string)
+	if _, err := time.Parse(time.RFC3339, firedAtStr); err != nil {
+		t.Errorf("expected fired_at in RFC3339 format, got %q: %v", firedAtStr, err)
+	}
+}
+
+func TestHTTPActionErrorOnServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	a, err := httpaction.New("notify", map[string]any{"url": srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = a.Fire(context.Background(), state.AlarmEvent{
+		MonitorName: "test",
+		Transition:  state.TransitionFiring,
+		FiredAt:     time.Now(),
+	})
+	if err == nil {
+		t.Error("expected error on 500 response")
+	}
 }
