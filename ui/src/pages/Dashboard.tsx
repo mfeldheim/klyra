@@ -9,6 +9,7 @@ export function Dashboard() {
   const [cfg, setCfg] = useState<ConfigResponse | null>(null)
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set())
   const [activeStatuses, setActiveStatuses] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<string | null>(null)
 
   useEffect(() => {
     const load = () => {
@@ -138,14 +139,30 @@ export function Dashboard() {
       {filteredFiring.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           <div className="group-header">🔴 Firing ({filteredFiring.length})</div>
-          {filteredFiring.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
+          {filteredFiring.map(a => (
+            <AlarmCard
+              key={a.monitorName}
+              alarm={a}
+              monitorType={typeMap[a.monitorName]}
+              selected={selected === a.monitorName}
+              onSelect={a2 => setSelected(prev => prev === a2.monitorName ? null : a2.monitorName)}
+            />
+          ))}
         </div>
       )}
 
       {filteredOk.length > 0 && (
         <div>
           <div className="group-header">✅ OK ({filteredOk.length})</div>
-          {filteredOk.map(a => <AlarmCard key={a.monitorName} alarm={a} monitorType={typeMap[a.monitorName]} />)}
+          {filteredOk.map(a => (
+            <AlarmCard
+              key={a.monitorName}
+              alarm={a}
+              monitorType={typeMap[a.monitorName]}
+              selected={selected === a.monitorName}
+              onSelect={a2 => setSelected(prev => prev === a2.monitorName ? null : a2.monitorName)}
+            />
+          ))}
         </div>
       )}
     </div>

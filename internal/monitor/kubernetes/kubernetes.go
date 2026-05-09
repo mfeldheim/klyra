@@ -4,6 +4,7 @@ package k8smon
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -361,7 +362,25 @@ func (m *k8sMonitor) checkEvent(ctx context.Context, now time.Time) (state.Check
 	}
 
 	found := len(events) > 0
-	msg := fmt.Sprintf("found=%v (count=%d)", found, len(events))
+	var msg string
+	if found {
+		names := make([]string, 0, len(events))
+		seen := make(map[string]bool)
+		for _, ev := range events {
+			n := ev.InvolvedObject.Name
+			if n != "" && !seen[n] {
+				seen[n] = true
+				names = append(names, n)
+			}
+		}
+		if len(names) > 0 {
+			msg = fmt.Sprintf("%s (count=%d, pods: %s)", m.resName, len(events), strings.Join(names, ", "))
+		} else {
+			msg = fmt.Sprintf("%s (count=%d)", m.resName, len(events))
+		}
+	} else {
+		msg = fmt.Sprintf("%s: none in window", m.resName)
+	}
 
 	return state.CheckResult{
 		MonitorName: m.name,

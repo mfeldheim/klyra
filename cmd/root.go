@@ -20,6 +20,7 @@ import (
 	_ "github.com/mfeldheim/klyra/internal/monitor/http"
 	_ "github.com/mfeldheim/klyra/internal/monitor/kubernetes"
 	_ "github.com/mfeldheim/klyra/internal/monitor/prometheus"
+	_ "github.com/mfeldheim/klyra/internal/monitor/promscr"
 
 	"github.com/mfeldheim/klyra/internal/config"
 	"github.com/mfeldheim/klyra/internal/engine"

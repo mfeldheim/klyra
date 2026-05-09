@@ -16,6 +16,16 @@ function firedFor(iso?: string): string {
   return `firing for ${Math.floor(diff / 3600)}h`
 }
 
+function firedDuration(iso?: string): string {
+  if (!iso) return ''
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (diff < 60) return `${diff}s`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  return `${h}h ${m}m`
+}
+
 function typeIcon(type: string): JSX.Element {
   switch (type) {
     case 'http':
@@ -33,6 +43,7 @@ function typeIcon(type: string): JSX.Element {
         </svg>
       )
     case 'prometheus':
+    case 'prometheus_scrape':
       return (
         <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
           <path d="M8 2c0 3-3 4-3 7a3 3 0 0 0 6 0c0-1.5-1-2.5-1-4 0 0-1 1-1 2.5C8.5 9 7 8 7 6.5 7 5 8 2 8 2z"/>
@@ -48,9 +59,19 @@ function typeIcon(type: string): JSX.Element {
   }
 }
 
-export function AlarmCard({ alarm, monitorType }: { alarm: AlarmState; monitorType?: string }) {
+interface AlarmCardProps {
+  alarm: AlarmState
+  monitorType?: string
+  selected?: boolean
+  onSelect?: (alarm: AlarmState) => void
+}
+
+export function AlarmCard({ alarm, monitorType, selected, onSelect }: AlarmCardProps) {
   return (
-    <div className={`card ${alarm.status.toLowerCase()}`}>
+    <div
+      className={`card ${alarm.status.toLowerCase()}${selected ? ' selected' : ''}${onSelect ? ' clickable' : ''}`}
+      onClick={() => onSelect?.(alarm)}
+    >
       <div className="card-body">
         <div className="card-name">{alarm.monitorName}</div>
         <div className="card-meta">
@@ -62,9 +83,41 @@ export function AlarmCard({ alarm, monitorType }: { alarm: AlarmState; monitorTy
             </span></>
           )}
         </div>
+        {selected && (
+          <div className="card-detail">
+            <div className="detail-row">
+              <span className="detail-label">Last checked</span>
+              <span className="detail-value">{new Date(alarm.lastCheck).toLocaleString()}</span>
+            </div>
+            {alarm.firedAt && (
+              <>
+                <div className="detail-row">
+                  <span className="detail-label">Fired at</span>
+                  <span className="detail-value">{new Date(alarm.firedAt).toLocaleString()}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Duration</span>
+                  <span className="detail-value">{firedDuration(alarm.firedAt)}</span>
+                </div>
+              </>
+            )}
+            {alarm.lastValue !== undefined && (
+              <div className="detail-row">
+                <span className="detail-label">Value</span>
+                <span className="detail-value">{String(alarm.lastValue)}</span>
+              </div>
+            )}
+            {alarm.message && (
+              <div className="detail-row">
+                <span className="detail-label">Details</span>
+                <span className="detail-value detail-message">{alarm.message}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="card-right">
-        {alarm.lastValue !== undefined && (
+        {!selected && alarm.lastValue !== undefined && (
           <div className="card-value">{String(alarm.lastValue)}</div>
         )}
         <div className="card-time">
