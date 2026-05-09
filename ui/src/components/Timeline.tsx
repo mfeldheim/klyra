@@ -1,12 +1,13 @@
-import type { HistoryEvent } from '../api/client'
+import type { AlarmStatus, HistoryEvent } from '../api/client'
 
 interface Props {
   monitorName: string
   events: HistoryEvent[]
   windowHours?: number
+  currentStatus?: AlarmStatus
 }
 
-export function Timeline({ monitorName, events, windowHours = 24 }: Props) {
+export function Timeline({ monitorName, events, windowHours = 24, currentStatus }: Props) {
   const now = Date.now()
   const windowMs = windowHours * 3600 * 1000
   const start = now - windowMs
@@ -28,7 +29,9 @@ export function Timeline({ monitorName, events, windowHours = 24 }: Props) {
     cursor = t
   }
   const tail = Math.max(1, now - cursor)
-  const lastFiring = relevant.length > 0 && relevant[relevant.length - 1].transition === 'FIRING'
+  const lastFiring = relevant.length > 0
+    ? relevant[relevant.length - 1].transition === 'FIRING'
+    : currentStatus === 'FIRING'
   segments.push({ type: lastFiring ? 'fire' : 'ok', flex: tail })
 
   return (
