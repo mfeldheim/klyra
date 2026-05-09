@@ -2,5 +2,6 @@ klyra
 dist/
 ui/node_modules/
 ui/dist/
+internal/server/dist/
 .env
 *.test

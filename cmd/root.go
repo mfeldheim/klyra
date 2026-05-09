@@ -82,7 +82,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	h := server.NewHandlers(st, cfg)
-	srv := server.New(h, nil) // UI fs injected at build time via embed.go
+	srv := server.New(h, server.UIFileSystem()) // UI fs injected at build time via embed.go
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- srv.ListenAndServe(ctx, flagAddr)
