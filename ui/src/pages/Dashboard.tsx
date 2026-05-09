@@ -92,16 +92,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* 24h timeline */}
-      {all.length > 0 && (
-        <div className="block" style={{ marginBottom: 20 }}>
-          <h3>24h overview</h3>
-          {all.map(a => (
-            <Timeline key={a.monitorName} monitorName={a.monitorName} events={history} currentStatus={a.status} />
-          ))}
-        </div>
-      )}
-
       {/* Group tile grid */}
       {visibleGroups.length > 0 && (
         <div className="group-grid">
@@ -138,6 +128,16 @@ export function Dashboard() {
           </div>
         </div>
       ))}
+
+      {/* 24h timeline */}
+      {all.length > 0 && (
+        <div className="block" style={{ marginBottom: 20 }}>
+          <h3>24h overview</h3>
+          {all.map(a => (
+            <Timeline key={a.monitorName} monitorName={a.monitorName} events={history} currentStatus={a.status} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
