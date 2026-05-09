@@ -91,10 +91,27 @@ func (e *Engine) Run(ctx context.Context) error {
 		monitors = append(monitors, monitorEntry{m, interval, mc.Threshold})
 	}
 
-	// Build threshold map.
+	// Build threshold map and monitor metadata (icon, priority).
+	type monitorMeta struct {
+		icon     string
+		priority *int
+	}
 	thresholds := make(map[string]config.ThresholdConfig, len(e.cfg.Monitors))
+	meta := make(map[string]monitorMeta, len(e.cfg.Monitors))
 	for _, mc := range e.cfg.Monitors {
 		thresholds[mc.Name] = mc.Threshold
+		meta[mc.Name] = monitorMeta{
+			icon:     state.ResolveIcon(mc.Icon),
+			priority: state.ParsePriority(mc.Priority),
+		}
+	}
+
+	// Seed icons into alarm states so the API serves them before the first check.
+	for _, mc := range e.cfg.Monitors {
+		existing, _ := e.store.GetAlarm(mc.Name)
+		existing.MonitorName = mc.Name
+		existing.Icon = meta[mc.Name].icon
+		e.store.SetAlarm(existing)
 	}
 
 	// Phase 2: start all goroutines.
@@ -128,6 +145,9 @@ func (e *Engine) Run(ctx context.Context) error {
 					continue
 				}
 				if ev := ApplyResult(e.store, thr, r); ev != nil {
+					m := meta[r.MonitorName]
+					ev.Icon = m.icon
+					ev.Priority = m.priority
 					e.dispatcher.Dispatch(ctx, *ev)
 				}
 			case <-ctx.Done():

@@ -14,14 +14,15 @@ import (
 )
 
 type testCase struct {
-	name         string
-	cfg          map[string]any
-	event        state.AlarmEvent
-	wantTitle    string
-	wantInMsg    []string
-	wantPriority string
-	wantStatus   int
-	wantErr      bool
+	name          string
+	cfg           map[string]any
+	event         state.AlarmEvent
+	wantTitle     string
+	wantInMsg     []string
+	wantPriority  string
+	wantRetry     bool
+	wantStatus    int
+	wantErr       bool
 }
 
 func TestPushoverAction(t *testing.T) {
@@ -109,6 +110,24 @@ func TestPushoverAction(t *testing.T) {
 			wantStatus: http.StatusOK,
 			wantInMsg:  []string{"mymonitor", "FIRING"},
 		},
+		{
+			name: "critical event priority overrides action priority and sets retry/expire",
+			cfg: map[string]any{
+				"token":    "app-token",
+				"user":     "user-key",
+				"priority": float64(1),
+			},
+			event: state.AlarmEvent{
+				MonitorName: "critical-monitor",
+				Transition:  state.TransitionFiring,
+				Value:       true,
+				FiredAt:     time.Now(),
+				Priority:    func() *int { v := 2; return &v }(),
+			},
+			wantPriority: "2",
+			wantRetry:    true,
+			wantStatus:   http.StatusOK,
+		},
 	}
 
 	for _, tc := range tests {
@@ -159,6 +178,12 @@ func TestPushoverAction(t *testing.T) {
 			if tc.wantPriority != "" {
 				if got := capturedForm.Get("priority"); got != tc.wantPriority {
 					t.Errorf("priority: got %q, want %q", got, tc.wantPriority)
+				}
+			}
+
+			if tc.wantRetry {
+				if capturedForm.Get("retry") == "" || capturedForm.Get("expire") == "" {
+					t.Error("expected retry and expire fields for emergency priority")
 				}
 			}
 

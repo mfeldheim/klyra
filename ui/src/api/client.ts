@@ -10,6 +10,7 @@ export interface AlarmState {
   firedAt?: string
   lastValue?: unknown
   message?: string
+  icon?: string
 }
 
 export interface HistoryEvent {

@@ -82,6 +82,7 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 		LastCheck:     now,
 		LastValue:     r.Value,
 		Message:       r.Message,
+		Icon:          current.Icon,
 	}
 
 	// Bug 3: CheckError (failed to run) and CheckUnknown both skip threshold

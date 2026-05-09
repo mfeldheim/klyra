@@ -72,15 +72,21 @@ export function AlarmCard({ alarm, monitorType, selected, onSelect }: AlarmCardP
       className={`card ${alarm.status.toLowerCase()}${selected ? ' selected' : ''}${onSelect ? ' clickable' : ''}`}
       onClick={() => onSelect?.(alarm)}
     >
+      {alarm.icon && (
+        <div className="card-icon" title={monitorType}>{alarm.icon}</div>
+      )}
       <div className="card-body">
         <div className="card-name">{alarm.monitorName}</div>
         <div className="card-meta">
           <StatusBadge status={alarm.status} />
           {alarm.message && <> · {alarm.message}</>}
-          {monitorType && (
+          {monitorType && !alarm.icon && (
             <> · <span className={`tag ${monitorType}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               {typeIcon(monitorType)}{monitorType}
             </span></>
+          )}
+          {monitorType && alarm.icon && (
+            <> · <span className={`tag ${monitorType}`}>{monitorType}</span></>
           )}
         </div>
         {selected && (

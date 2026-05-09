@@ -17,6 +17,8 @@ type MonitorConfig struct {
 	Config    map[string]any  `yaml:"config"    json:"config,omitempty"`
 	Threshold ThresholdConfig `yaml:"threshold" json:"threshold"`
 	Actions   []string        `yaml:"actions"   json:"actions"`
+	Icon      string          `yaml:"icon"      json:"icon,omitempty"`
+	Priority  string          `yaml:"priority"  json:"priority,omitempty"`
 }
 
 type ThresholdConfig struct {

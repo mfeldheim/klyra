@@ -1,6 +1,9 @@
 package state
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type CheckStatus string
 
@@ -42,6 +45,7 @@ type AlarmState struct {
 	RecoverySince *time.Time  `json:"recoverySince,omitempty"`
 	LastValue     any         `json:"lastValue,omitempty"`
 	Message       string      `json:"message,omitempty"`
+	Icon          string      `json:"icon,omitempty"`
 }
 
 type HistoryEvent struct {
@@ -57,6 +61,8 @@ type AlarmEvent struct {
 	Message     string
 	Value       any
 	FiredAt     time.Time
+	Icon        string
+	Priority    *int
 }
 
 type Silence struct {
@@ -86,4 +92,60 @@ func (ps *PersistedState) Trim(window time.Duration, now time.Time) {
 		}
 	}
 	ps.History = filtered
+}
+
+// iconMap maps friendly icon names to emoji characters.
+var iconMap = map[string]string{
+	"globe":      "🌐",
+	"kubernetes": "☸️",
+	"k8s":        "☸️",
+	"pipe":       "🔌",
+	"pipeline":   "🔌",
+	"tunnel":     "🚇",
+	"cloud":      "☁️",
+	"server":     "🖥️",
+	"database":   "🗄️",
+	"db":         "🗄️",
+	"network":    "📡",
+	"alert":      "🚨",
+	"warning":    "⚠️",
+	"fire":       "🔥",
+	"cpu":        "🧮",
+	"memory":     "💾",
+	"disk":       "💽",
+	"check":      "✅",
+	"clock":      "🕐",
+	"lock":       "🔒",
+}
+
+// ResolveIcon maps a named icon or raw emoji to its display form.
+// Unknown names are passed through as-is (allows raw emoji in config).
+func ResolveIcon(name string) string {
+	if name == "" {
+		return ""
+	}
+	if emoji, ok := iconMap[strings.ToLower(name)]; ok {
+		return emoji
+	}
+	return name
+}
+
+// ParsePriority converts a priority string to a Pushover priority int.
+// Returns nil when the string is empty (no override — use action default).
+// Levels: low=-1, normal=0, high=1, critical=2 (emergency, repeats until ack).
+func ParsePriority(s string) *int {
+	var v int
+	switch strings.ToLower(s) {
+	case "low":
+		v = -1
+	case "normal":
+		v = 0
+	case "high":
+		v = 1
+	case "critical":
+		v = 2
+	default:
+		return nil
+	}
+	return &v
 }

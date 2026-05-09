@@ -92,6 +92,8 @@ func (a *pushoverAction) Fire(ctx context.Context, ev state.AlarmEvent) error {
 	priority := a.priority
 	if ev.Transition == state.TransitionResolved {
 		priority = 0
+	} else if ev.Priority != nil {
+		priority = *ev.Priority
 	}
 
 	form := url.Values{}
@@ -100,6 +102,11 @@ func (a *pushoverAction) Fire(ctx context.Context, ev state.AlarmEvent) error {
 	form.Set("title", title)
 	form.Set("message", message)
 	form.Set("priority", strconv.Itoa(priority))
+	// Emergency priority requires retry + expire or Pushover rejects the request.
+	if priority == 2 {
+		form.Set("retry", "60")
+		form.Set("expire", "3600")
+	}
 	if a.dashboardURL != "" {
 		form.Set("url", a.dashboardURL)
 		form.Set("url_title", "Open Klyra Dashboard")
@@ -126,12 +133,16 @@ func (a *pushoverAction) Fire(ctx context.Context, ev state.AlarmEvent) error {
 }
 
 func buildNotification(ev state.AlarmEvent) (title, message string) {
+	prefix := ""
+	if ev.Icon != "" {
+		prefix = ev.Icon + " "
+	}
 	if ev.Transition == state.TransitionFiring {
-		title = "FIRING: " + ev.MonitorName
+		title = prefix + "FIRING: " + ev.MonitorName
 		message = fmt.Sprintf("Monitor %s is FIRING\nValue: %v\nSince: %s",
 			ev.MonitorName, ev.Value, ev.FiredAt.Format(time.RFC3339))
 	} else {
-		title = "RESOLVED: " + ev.MonitorName
+		title = prefix + "RESOLVED: " + ev.MonitorName
 		duration := time.Since(ev.FiredAt).Round(time.Second)
 		message = fmt.Sprintf("Monitor %s resolved\nValue: %v\nDuration: %s",
 			ev.MonitorName, ev.Value, duration)
