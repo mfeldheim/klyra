@@ -20,7 +20,7 @@ export function Dashboard() {
   }, [])
 
   const typeMap: Record<string, string> = {}
-  cfg?.monitors.forEach(m => { typeMap[m.name] = m.type })
+  cfg?.monitors?.forEach(m => { typeMap[m.name] = m.type })
 
   const all = Object.values(alarms)
   const firing = all.filter(a => a.status === 'FIRING')
