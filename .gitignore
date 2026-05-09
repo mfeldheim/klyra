@@ -1,7 +1,8 @@
 /klyra
-dist/
+/dist/
 ui/node_modules/
 ui/dist/
-internal/server/dist/
+internal/server/dist/*
+!internal/server/dist/.gitkeep
 .env
 *.test
