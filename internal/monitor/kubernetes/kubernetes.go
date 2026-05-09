@@ -309,7 +309,12 @@ func nodeConditionTrue(node corev1.Node, condType corev1.NodeConditionType) bool
 // resName is reused as a reason filter; check=="type=Warning" restricts to Warning events.
 // Returns Value=true if any matching event is found.
 func (m *k8sMonitor) checkEvent(ctx context.Context, now time.Time) (state.CheckResult, error) {
-	list, err := m.client.CoreV1().Events(m.namespace).List(ctx, metav1.ListOptions{})
+	listOpts := metav1.ListOptions{}
+	if m.resName != "" {
+		listOpts.FieldSelector = "reason=" + m.resName
+	}
+
+	list, err := m.client.CoreV1().Events(m.namespace).List(ctx, listOpts)
 	if err != nil {
 		return state.CheckResult{
 			MonitorName: m.name,
@@ -335,17 +340,6 @@ func (m *k8sMonitor) checkEvent(ctx context.Context, now time.Time) (state.Check
 			}
 		}
 		events = recent
-	}
-
-	// Filter by reason when resName is provided.
-	if m.resName != "" {
-		var filtered []corev1.Event
-		for _, ev := range events {
-			if ev.Reason == m.resName {
-				filtered = append(filtered, ev)
-			}
-		}
-		events = filtered
 	}
 
 	// Filter to Warning type when check is "type=Warning".
