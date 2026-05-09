@@ -1,26 +1,16 @@
 # syntax=docker/dockerfile:1
 
-# ── Stage 1: build React UI ──────────────────────────────────────────────────
-FROM node:alpine AS ui-builder
-WORKDIR /ui
-COPY ui/package*.json ./
-RUN npm ci
-COPY ui/ .
-RUN npm run build
-
-# ── Stage 2: build Go binary ─────────────────────────────────────────────────
+# ── Stage 1: build Go binary ─────────────────────────────────────────────────
+# internal/server/dist/ must be present before running docker build.
+# Use 'make build' for local builds, or let CI place it via build-ui artifact.
 FROM golang:alpine AS go-builder
 WORKDIR /app
-# Copy go module files and download deps first (cache layer)
 COPY go.mod go.sum ./
 RUN go mod download
-# Copy source
 COPY . .
-# Copy built UI into the server package for go:embed
-COPY --from=ui-builder /ui/dist ./internal/server/dist
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o klyra .
 
-# ── Stage 3: minimal runtime image ───────────────────────────────────────────
+# ── Stage 2: minimal runtime image ───────────────────────────────────────────
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app

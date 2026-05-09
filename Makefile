@@ -15,6 +15,8 @@ lint:
 	go vet ./...
 
 docker:
+	cd ui && npm ci && npm run build
+	cp -r ui/dist internal/server/dist
 	docker build -t $(IMAGE):$(TAG) .
 	docker push $(IMAGE):$(TAG)
 
