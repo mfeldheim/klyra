@@ -18,8 +18,13 @@ export function Dashboard() {
       api.config().then(setCfg).catch(() => {})
     }
     load()
-    const id = setInterval(load, 30000)
-    return () => clearInterval(id)
+    const id = setInterval(load, 15000)
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   const typeMap: Record<string, string> = {}
