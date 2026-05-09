@@ -21,16 +21,21 @@ func init() {
 }
 
 type promScrapeMonitor struct {
-	name   string
-	url    string
-	metric string
-	agg    string // first | min | max | sum | count
-	client *http.Client
+	name         string
+	url          string
+	metric       string
+	agg          string // first | min | max | sum | count
+	missingValue *float64
+	client       *http.Client
 }
 
 // New creates a prometheus_scrape monitor that fetches raw Prometheus text exposition format.
 // Required config: url, metric.
 // Optional: result (aggregation over labeled series: first, min, max, sum, count; default "first").
+// Optional: missing_value (float) — value to use when the metric is absent from the scrape output.
+//
+//	Without this, an absent metric returns UNKNOWN. Use missing_value: 0 for metrics that
+//	Prometheus only emits when non-zero (e.g. karpenter_scheduler_queue_depth).
 func New(name string, cfg map[string]any) (monitor.Monitor, error) {
 	u, err := cfgString(cfg, "url", true)
 	if err != nil {
@@ -50,12 +55,26 @@ func New(name string, cfg map[string]any) (monitor.Monitor, error) {
 		}
 	}
 
+	var missingValue *float64
+	if v, ok := cfg["missing_value"]; ok {
+		switch n := v.(type) {
+		case float64:
+			missingValue = &n
+		case int:
+			f := float64(n)
+			missingValue = &f
+		default:
+			return nil, fmt.Errorf("prometheus_scrape monitor %q: missing_value must be a number", name)
+		}
+	}
+
 	return &promScrapeMonitor{
-		name:   name,
-		url:    u,
-		metric: metric,
-		agg:    agg,
-		client: &http.Client{Timeout: 10 * time.Second},
+		name:         name,
+		url:          u,
+		metric:       metric,
+		agg:          agg,
+		missingValue: missingValue,
+		client:       &http.Client{Timeout: 10 * time.Second},
 	}, nil
 }
 
@@ -89,6 +108,15 @@ func (m *promScrapeMonitor) Check(ctx context.Context) (state.CheckResult, error
 		return state.CheckResult{MonitorName: m.name, Status: state.CheckUnknown, Message: parseErr.Error(), Timestamp: now}, nil
 	}
 	if !found {
+		if m.missingValue != nil {
+			return state.CheckResult{
+				MonitorName: m.name,
+				Status:      state.CheckOK,
+				Value:       *m.missingValue,
+				Message:     fmt.Sprintf("metric absent, using missing_value=%.6g", *m.missingValue),
+				Timestamp:   now,
+			}, nil
+		}
 		return state.CheckResult{
 			MonitorName: m.name,
 			Status:      state.CheckUnknown,
