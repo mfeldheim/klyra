@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/mfeldheim/klyra
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  build-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: npm ci
+        working-directory: ui
+      - run: npm run build
+        working-directory: ui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist/
+
+  build-amd64:
+    needs: [test, build-ui]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/server/dist/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch,suffix=-amd64
+            type=sha,prefix=,suffix=-amd64,format=short
+            type=semver,pattern={{version}},suffix=-amd64
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+      - run: echo "${{ steps.meta.outputs.tags }}" | head -1 > /tmp/amd64-tag
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amd64-tag
+          path: /tmp/amd64-tag
+
+  build-arm64:
+    needs: [test, build-ui]
+    runs-on: ubuntu-24.04-arm
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/server/dist/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch,suffix=-arm64
+            type=sha,prefix=,suffix=-arm64,format=short
+            type=semver,pattern={{version}},suffix=-arm64
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+      - run: echo "${{ steps.meta.outputs.tags }}" | head -1 > /tmp/arm64-tag
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-tag
+          path: /tmp/arm64-tag
+
+  merge-manifest:
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: amd64-tag
+          path: /tmp/
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-tag
+          path: /tmp/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+      - name: Create and push multi-arch manifest
+        run: |
+          AMD64=$(cat /tmp/amd64-tag | head -1)
+          ARM64=$(cat /tmp/arm64-tag | head -1)
+          for TAG in $(echo "${{ steps.meta.outputs.tags }}"); do
+            docker buildx imagetools create -t $TAG $AMD64 $ARM64
+          done
+
+  helm-release:
+    needs: [merge-manifest]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package and push Helm chart
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          helm package deploy/helm/klyra --version $VERSION --app-version $VERSION
+          helm push klyra-${VERSION}.tgz oci://ghcr.io/mfeldheim/klyra-helm
