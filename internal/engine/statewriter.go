@@ -44,9 +44,7 @@ func (sw *StateWriter) Run(ctx context.Context) {
 			if sw.store.IsDirty() {
 				if err := sw.flush(ctx); err != nil {
 					log.Printf("statewriter: flush error: %v", err)
-					// keep dirty flag set so we retry next tick
-				} else {
-					sw.store.ClearDirty()
+					sw.store.SetDirty() // ensure retry on next tick
 				}
 			}
 		case <-ctx.Done():
@@ -57,6 +55,7 @@ func (sw *StateWriter) Run(ctx context.Context) {
 
 // flush snapshots the store and persists it to the ConfigMap.
 func (sw *StateWriter) flush(ctx context.Context) error {
+	sw.store.ClearDirty()
 	ps := sw.store.Snapshot(24 * time.Hour)
 	data, err := json.Marshal(ps)
 	if err != nil {

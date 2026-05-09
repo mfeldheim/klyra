@@ -139,6 +139,13 @@ func (s *Store) ClearDirty() {
 	s.dirty = false
 }
 
+// SetDirty marks the store as having unsaved changes.
+func (s *Store) SetDirty() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dirty = true
+}
+
 // copyState returns a deep copy of the store's current state under RLock.
 func (s *Store) copyState() PersistedState {
 	s.mu.RLock()
