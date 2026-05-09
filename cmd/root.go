@@ -111,6 +111,10 @@ func run(cmd *cobra.Command, args []string) error {
 		func() { log.Println("leader: engine stopped") },
 	)
 
+	// Wait for the HTTP server to complete its graceful shutdown.
+	if err := <-serverErr; err != nil {
+		log.Printf("server shutdown: %v", err)
+	}
 	return nil
 }
 
