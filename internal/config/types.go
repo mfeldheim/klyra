@@ -19,6 +19,7 @@ type MonitorConfig struct {
 	Actions   []string        `yaml:"actions"   json:"actions"`
 	Icon      string          `yaml:"icon"      json:"icon,omitempty"`
 	Priority  string          `yaml:"priority"  json:"priority,omitempty"`
+	Group     string          `yaml:"group"     json:"group,omitempty"`
 }
 
 type ThresholdConfig struct {

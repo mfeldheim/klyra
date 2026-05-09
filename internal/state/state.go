@@ -46,6 +46,7 @@ type AlarmState struct {
 	LastValue     any         `json:"lastValue,omitempty"`
 	Message       string      `json:"message,omitempty"`
 	Icon          string      `json:"icon,omitempty"`
+	Group         string      `json:"group,omitempty"`
 }
 
 type HistoryEvent struct {

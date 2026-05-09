@@ -106,11 +106,12 @@ func (e *Engine) Run(ctx context.Context) error {
 		}
 	}
 
-	// Seed icons into alarm states so the API serves them before the first check.
+	// Seed monitor metadata into alarm states so the API serves them before the first check.
 	for _, mc := range e.cfg.Monitors {
 		existing, _ := e.store.GetAlarm(mc.Name)
 		existing.MonitorName = mc.Name
 		existing.Icon = meta[mc.Name].icon
+		existing.Group = mc.Group
 		e.store.SetAlarm(existing)
 	}
 

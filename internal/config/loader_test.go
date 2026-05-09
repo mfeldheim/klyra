@@ -60,3 +60,26 @@ func TestLoadConfigMissingEnvVar(t *testing.T) {
 		t.Fatal("expected error for missing env var")
 	}
 }
+
+func TestLoadConfigGroup(t *testing.T) {
+	yaml := `
+monitors:
+  - name: api-gw
+    type: http
+    group: global-infra
+    interval: 30s
+    config:
+      url: https://example.com
+    threshold:
+      operator: eq
+      value: false
+actions: []
+`
+	cfg, err := config.Load(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Monitors[0].Group != "global-infra" {
+		t.Errorf("expected group 'global-infra', got %q", cfg.Monitors[0].Group)
+	}
+}

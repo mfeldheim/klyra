@@ -70,3 +70,28 @@ func TestCreateSilenceHandler(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestStatusHandlerGroup(t *testing.T) {
+	st := state.NewStore()
+	st.SetAlarm(state.AlarmState{
+		MonitorName: "api-gw",
+		Status:      state.AlarmOK,
+		LastCheck:   time.Now(),
+		Group:       "global-infra",
+	})
+	cfg := &config.Config{
+		Monitors: []config.MonitorConfig{{Name: "api-gw", Type: "http", Group: "global-infra"}},
+	}
+	h := server.NewHandlers(st, cfg)
+	req := httptest.NewRequest("GET", "/api/status", nil)
+	w := httptest.NewRecorder()
+	h.Status(w, req)
+
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	alarms := resp["alarms"].(map[string]any)
+	alarm := alarms["api-gw"].(map[string]any)
+	if alarm["group"] != "global-infra" {
+		t.Errorf("expected group 'global-infra' in status response, got %v", alarm["group"])
+	}
+}
