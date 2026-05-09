@@ -3,5 +3,7 @@ kind: ConfigMap
 metadata:
   name: klyra-state
   namespace: {{ include "klyra.namespace" . }}
+  annotations:
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
 data:
   state.json: "{}"
