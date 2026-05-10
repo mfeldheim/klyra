@@ -163,6 +163,56 @@ func TestRecoveryForStaysFiringUntilDurationElapsed(t *testing.T) {
 	}
 }
 
+// TestCheckUnknownDoesNotResetFiring verifies that a CheckUnknown result while
+// the alarm is FIRING keeps the alarm FIRING (preventing spurious re-fires after
+// transient check failures).
+func TestCheckUnknownDoesNotResetFiring(t *testing.T) {
+	st := state.NewStore()
+	now := time.Now()
+	firedAt := now.Add(-5 * time.Minute)
+	st.SetAlarm(state.AlarmState{
+		MonitorName: "test",
+		Status:      state.AlarmFiring,
+		FiredAt:     &firedAt,
+	})
+	thr := config.ThresholdConfig{Operator: "lt", Value: float64(2)}
+
+	// Check fails with UNKNOWN while alarm is already FIRING.
+	result := state.CheckResult{MonitorName: "test", Status: state.CheckUnknown, Timestamp: now}
+	ev := engine.ApplyResult(st, thr, result)
+	if ev != nil {
+		t.Fatalf("expected no event on CheckUnknown, got %v", ev)
+	}
+	alarm, _ := st.GetAlarm("test")
+	if alarm.Status != state.AlarmFiring {
+		t.Errorf("expected alarm to remain FIRING after CheckUnknown, got %v", alarm.Status)
+	}
+
+	// Next successful check with threshold still met must NOT re-fire.
+	result = state.CheckResult{MonitorName: "test", Status: state.CheckOK, Value: float64(1), Timestamp: now.Add(30 * time.Second)}
+	ev = engine.ApplyResult(st, thr, result)
+	if ev != nil {
+		t.Fatalf("expected no event (alarm still firing, no transition), got %v", ev)
+	}
+}
+
+// TestCheckUnknownSetsUnknownFromOK verifies that a CheckUnknown result while
+// the alarm is OK transitions to UNKNOWN (normal non-firing behavior unchanged).
+func TestCheckUnknownSetsUnknownFromOK(t *testing.T) {
+	st := state.NewStore()
+	thr := config.ThresholdConfig{Operator: "lt", Value: float64(2)}
+
+	result := state.CheckResult{MonitorName: "test", Status: state.CheckUnknown, Timestamp: time.Now()}
+	ev := engine.ApplyResult(st, thr, result)
+	if ev != nil {
+		t.Fatalf("expected no event on CheckUnknown, got %v", ev)
+	}
+	alarm, _ := st.GetAlarm("test")
+	if alarm.Status != state.AlarmUnknown {
+		t.Errorf("expected alarm UNKNOWN from OK state, got %v", alarm.Status)
+	}
+}
+
 // TestRecoveryWindowResetOnRefiring verifies that if the threshold is met again
 // during the recovery window, RecoverySince is cleared.
 func TestRecoveryWindowResetOnRefiring(t *testing.T) {

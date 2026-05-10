@@ -86,10 +86,13 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 		Group:         current.Group,
 	}
 
-	// Bug 3: CheckError (failed to run) and CheckUnknown both skip threshold
-	// evaluation and produce AlarmUnknown with no event.
+	// CheckError/CheckUnknown: skip threshold evaluation. If the alarm was already
+	// FIRING, keep it firing — downgrading to UNKNOWN would cause a spurious
+	// re-fire on the next successful check. Only set UNKNOWN from a non-firing state.
 	if r.Status == state.CheckUnknown || r.Status == state.CheckError {
-		updated.Status = state.AlarmUnknown
+		if current.Status != state.AlarmFiring {
+			updated.Status = state.AlarmUnknown
+		}
 		updated.PendingSince = nil
 		st.SetAlarm(updated)
 		return nil
