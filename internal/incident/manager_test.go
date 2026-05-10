@@ -42,6 +42,10 @@ func (f *fakeStore) AppendContent(_ context.Context, id, content string) error {
 	return nil
 }
 
+func (f *fakeStore) ReadContent(_ context.Context, id string) (string, error) {
+	return f.content[id], nil
+}
+
 func (f *fakeStore) ListIncidents(_ context.Context) (Index, error) {
 	return f.idx, nil
 }
