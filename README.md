@@ -182,6 +182,28 @@ Returns `Value: float64`. Without `missing_value`, an absent metric returns `UNK
 
 ---
 
+### `cloudwatch`
+
+Queries a CloudWatch metric directly via AWS API.
+
+```yaml
+config:
+  region: eu-west-1
+  namespace: AWS/Kinesis
+  metric: GetRecords.IteratorAgeMilliseconds
+  stat: Maximum             # Average | Sum | Minimum | Maximum | SampleCount
+  period: 300               # seconds (default: 300)
+  lookback: 10m             # optional search window (default: 10m)
+  dimensions:
+    StreamName: yellow-search-sync-production
+```
+
+`stream_name` is also supported as shorthand for `dimensions.StreamName`.
+
+Returns `Value: float64`.
+
+---
+
 ## Thresholds
 
 Every monitor has a `threshold` block that defines when to fire:
@@ -240,7 +262,7 @@ Posts a JSON body with `monitor`, `status`, `message`, `value`, and `fired_at` f
 | Field | Type | Description |
 |---|---|---|
 | `name` | string | Unique monitor name |
-| `type` | string | `http`, `kubernetes`, `prometheus`, `prometheus_scrape` |
+| `type` | string | `http`, `kubernetes`, `prometheus`, `prometheus_scrape`, `cloudwatch` |
 | `interval` | duration | How often to run (e.g. `30s`, `2m`) |
 | `group` | string | Dashboard grouping |
 | `icon` | string | Icon name for the dashboard and notifications: `globe`, `kubernetes`, `network`, `tunnel`, `database`, `memory`, `lock`, `warning` |

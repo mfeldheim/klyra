@@ -23,6 +23,7 @@ import (
 	_ "github.com/mfeldheim/klyra/internal/action/http"
 	"github.com/mfeldheim/klyra/internal/action/investigate"
 	_ "github.com/mfeldheim/klyra/internal/action/pushover"
+	_ "github.com/mfeldheim/klyra/internal/monitor/cloudwatch"
 	_ "github.com/mfeldheim/klyra/internal/monitor/http"
 	_ "github.com/mfeldheim/klyra/internal/monitor/kubernetes"
 	_ "github.com/mfeldheim/klyra/internal/monitor/prometheus"
