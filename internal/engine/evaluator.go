@@ -84,6 +84,7 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 		Message:       r.Message,
 		Icon:          current.Icon,
 		Group:         current.Group,
+		IncidentID:    current.IncidentID,
 	}
 
 	// CheckError/CheckUnknown: skip threshold evaluation. If the alarm was already

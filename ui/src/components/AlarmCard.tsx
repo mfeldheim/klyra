@@ -89,12 +89,12 @@ export function AlarmCard({ alarm, monitorType, selected, onSelect, onOpenIncide
               </div>
             )}
             {alarm.incidentId && onOpenIncident && (
-              <div className="detail-row">
-                <span className="detail-label">Incident</span>
-                <span className="incident-link" onClick={e => { e.stopPropagation(); onOpenIncident(alarm.incidentId!) }}>
-                  {alarm.incidentId} →
-                </span>
-              </div>
+              <button
+                className="incident-btn"
+                onClick={e => { e.stopPropagation(); onOpenIncident(alarm.incidentId!) }}
+              >
+                View Incident →
+              </button>
             )}
           </div>
         )}

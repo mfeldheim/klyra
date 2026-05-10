@@ -225,6 +225,8 @@ body {
 /* Incident */
 .incident-link { color: #7ab8f5; font-family: monospace; font-size: 11px; cursor: pointer; text-decoration: underline; }
 .incident-link:hover { color: #a8d4ff; }
+.incident-btn { margin-top: 8px; padding: 6px 14px; background: #1a2a3a; border: 1px solid #3a7bd5; border-radius: 6px; color: #7ab8f5; font-size: 12px; cursor: pointer; align-self: flex-start; }
+.incident-btn:hover { background: #1e3550; border-color: #5a9df5; color: #a8d4ff; }
 .incident-content { background: #0d1117; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 16px; color: #e6edf3; font-size: 13px; line-height: 1.7; }
 .incident-content h1,.incident-content h2,.incident-content h3 { color: #e6edf3; margin: 16px 0 8px; }
 .incident-content h1 { font-size: 18px; } .incident-content h2 { font-size: 15px; } .incident-content h3 { font-size: 13px; }
