@@ -55,6 +55,7 @@ type HistoryEvent struct {
 	Transition  Transition `json:"transition"`
 	At          time.Time  `json:"at"`
 	Message     string     `json:"message,omitempty"`
+	IncidentID  string     `json:"incidentId,omitempty"`
 }
 
 type AlarmEvent struct {

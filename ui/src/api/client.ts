@@ -12,6 +12,7 @@ export interface AlarmState {
   message?: string
   icon?: string
   group?: string
+  incidentId?: string
 }
 
 export interface HistoryEvent {
@@ -19,6 +20,7 @@ export interface HistoryEvent {
   transition: Transition
   at: string
   message?: string
+  incidentId?: string
 }
 
 export interface Silence {
@@ -48,6 +50,23 @@ export interface ConfigResponse {
 }
 
 export interface MeResponse { user: string }
+
+export interface Incident {
+  id: string
+  monitorName: string
+  firedAt: string
+  resolvedAt?: string
+  status: 'active' | 'resolved'
+  investigationStatus: 'pending' | 'running' | 'complete' | 'failed'
+  value?: unknown
+  message?: string
+  icon?: string
+}
+
+export interface IncidentResponse {
+  incident: Incident
+  active: boolean
+}
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path)
@@ -79,4 +98,11 @@ export const api = {
     post<Silence>('/api/silences', { monitor, duration, reason }),
   deleteSilence: (id: string) => del(`/api/silences/${id}`),
   me: () => get<MeResponse>('/api/me'),
+  getIncident: (id: string) => get<IncidentResponse>(`/api/incidents/${id}`),
+  chatIncident: (id: string, message: string) =>
+    fetch(`/api/incidents/${id}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    }),
 }

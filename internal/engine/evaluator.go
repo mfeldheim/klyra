@@ -176,14 +176,5 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 
 	st.SetAlarm(updated)
 
-	if event != nil {
-		st.AppendHistory(state.HistoryEvent{
-			MonitorName: r.MonitorName,
-			Transition:  event.Transition,
-			At:          now,
-			Message:     r.Message,
-		})
-		return event
-	}
-	return nil
+	return event
 }

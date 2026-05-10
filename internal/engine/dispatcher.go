@@ -60,6 +60,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev state.AlarmEvent) {
 		}
 	}
 
+	// Record the transition in history now that IncidentID is known.
+	d.store.AppendHistory(state.HistoryEvent{
+		MonitorName: ev.MonitorName,
+		Transition:  ev.Transition,
+		At:          ev.FiredAt,
+		Message:     ev.Message,
+		IncidentID:  ev.IncidentID,
+	})
+
 	names, ok := d.monitorActions[ev.MonitorName]
 	if !ok {
 		return

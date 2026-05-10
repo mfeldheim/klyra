@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react'
 import { api, type HistoryEvent } from '../api/client'
+import { IncidentView } from './Incident'
 
 export function History() {
   const [events, setEvents] = useState<HistoryEvent[]>([])
   const [filter, setFilter] = useState('')
+  const [openIncident, setOpenIncident] = useState<string | null>(null)
 
   useEffect(() => {
     api.history().then(e => setEvents([...e].reverse())).catch(() => {})
   }, [])
+
+  if (openIncident) {
+    return <IncidentView incidentId={openIncident} onBack={() => setOpenIncident(null)} />
+  }
 
   const filtered = filter ? events.filter(e => e.monitorName.includes(filter)) : events
 
@@ -19,7 +25,7 @@ export function History() {
           <input placeholder="Filter by monitor name…" value={filter} onChange={e => setFilter(e.target.value)} style={{ width: 260 }} />
         </div>
         <table>
-          <thead><tr><th>Time</th><th>Monitor</th><th>Transition</th><th>Message</th></tr></thead>
+          <thead><tr><th>Time</th><th>Monitor</th><th>Transition</th><th>Message</th><th>Incident</th></tr></thead>
           <tbody>
             {filtered.map((ev, i) => (
               <tr key={i}>
@@ -27,6 +33,11 @@ export function History() {
                 <td>{ev.monitorName}</td>
                 <td style={{ color: ev.transition === 'FIRING' ? '#f44336' : '#4caf50' }}>{ev.transition}</td>
                 <td style={{ color: '#8b949e' }}>{ev.message || '—'}</td>
+                <td>
+                  {ev.incidentId
+                    ? <span className="incident-link" onClick={() => setOpenIncident(ev.incidentId!)}>{ev.incidentId.slice(-12)}</span>
+                    : <span style={{ color: '#484f58' }}>—</span>}
+                </td>
               </tr>
             ))}
           </tbody>
