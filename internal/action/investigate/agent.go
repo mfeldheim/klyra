@@ -200,11 +200,15 @@ func (a *Agent) runLoop(ctx context.Context, history *[]incident.ConvMessage, em
 			})
 		}
 		for _, tu := range toolUses {
+			inputJSON := tu.inputJSON
+			if inputJSON == "" {
+				inputJSON = "{}"
+			}
 			assistantMsg.Blocks = append(assistantMsg.Blocks, incident.ConvBlock{
 				Type:  "tool_use",
 				ID:    tu.id,
 				Name:  tu.name,
-				Input: json.RawMessage(tu.inputJSON),
+				Input: json.RawMessage(inputJSON),
 			})
 		}
 		*history = append(*history, assistantMsg)
@@ -256,6 +260,9 @@ func toBedrockMessages(msgs []incident.ConvMessage) ([]brtypes.Message, error) {
 				var inputMap map[string]any
 				if len(b.Input) > 0 {
 					json.Unmarshal(b.Input, &inputMap) //nolint:errcheck
+				}
+				if inputMap == nil {
+					inputMap = map[string]any{}
 				}
 				content = append(content, &brtypes.ContentBlockMemberToolUse{
 					Value: brtypes.ToolUseBlock{
