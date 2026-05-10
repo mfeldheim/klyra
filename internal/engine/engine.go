@@ -156,6 +156,7 @@ func (e *Engine) Run(ctx context.Context) error {
 					m := meta[r.MonitorName]
 					ev.Icon = m.icon
 					ev.Priority = m.priority
+					log.Printf("alarm %q: %s", ev.MonitorName, ev.Transition)
 					e.dispatcher.Dispatch(ctx, *ev)
 				}
 			case <-ctx.Done():

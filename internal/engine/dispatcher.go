@@ -30,6 +30,7 @@ func NewDispatcher(st *state.Store, actions map[string]action.Action, monitorAct
 // Dispatch fires all actions for the given AlarmEvent, skipping silenced monitors.
 func (d *Dispatcher) Dispatch(ctx context.Context, ev state.AlarmEvent) {
 	if d.store.IsSilenced(ev.MonitorName) {
+		log.Printf("dispatcher: monitor %q is silenced, skipping", ev.MonitorName)
 		return
 	}
 
@@ -82,6 +83,8 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev state.AlarmEvent) {
 		}
 		if err := a.Fire(ctx, ev); err != nil {
 			log.Printf("dispatcher: action %q fire error for monitor %q: %v", name, ev.MonitorName, err)
+		} else {
+			log.Printf("dispatcher: action %q fired for monitor %q (%s)", name, ev.MonitorName, ev.Transition)
 		}
 	}
 }

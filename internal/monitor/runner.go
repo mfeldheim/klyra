@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/mfeldheim/klyra/internal/state"
@@ -23,6 +24,11 @@ func Run(ctx context.Context, m Monitor, interval time.Duration, results chan<- 
 		}
 		if r.Timestamp.IsZero() {
 			r.Timestamp = time.Now()
+		}
+		if r.Status == state.CheckOK {
+			log.Printf("monitor %q: OK value=%v", r.MonitorName, r.Value)
+		} else {
+			log.Printf("monitor %q: %s: %s", r.MonitorName, r.Status, r.Message)
 		}
 		select {
 		case results <- r:

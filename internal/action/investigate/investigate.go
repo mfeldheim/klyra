@@ -2,6 +2,7 @@ package investigate
 
 import (
 	"context"
+	"log"
 
 	"github.com/mfeldheim/klyra/internal/action"
 	"github.com/mfeldheim/klyra/internal/incident"
@@ -57,7 +58,14 @@ func (a *investigateAction) Fire(ctx context.Context, ev state.AlarmEvent) error
 	ag := a.agent
 
 	mgr.RunInvestigation(incidentID, func(runCtx context.Context, history *[]incident.ConvMessage, emit func(string)) error {
-		return ag.Investigate(runCtx, ev, history, emit)
+		log.Printf("investigation %s: starting for monitor %q", incidentID, ev.MonitorName)
+		err := ag.Investigate(runCtx, ev, history, emit)
+		if err != nil {
+			log.Printf("investigation %s: failed: %v", incidentID, err)
+		} else {
+			log.Printf("investigation %s: complete", incidentID)
+		}
+		return err
 	})
 	return nil
 }
