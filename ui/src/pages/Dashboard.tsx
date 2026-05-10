@@ -3,6 +3,7 @@ import { api, type AlarmState, type HistoryEvent, type ConfigResponse } from '..
 import { AlarmCard } from '../components/AlarmCard'
 import { GroupTile } from '../components/GroupTile'
 import { Timeline } from '../components/Timeline'
+import { IncidentView } from './Incident'
 
 export function Dashboard() {
   const [alarms, setAlarms] = useState<Record<string, AlarmState>>({})
@@ -10,6 +11,7 @@ export function Dashboard() {
   const [cfg, setCfg] = useState<ConfigResponse | null>(null)
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<string | null>(null)
+  const [openIncident, setOpenIncident] = useState<string | null>(null)
 
   useEffect(() => {
     const load = () => {
@@ -75,6 +77,10 @@ export function Dashboard() {
 
   const visibleGroups = groupOrder.filter(g => grouped[g]?.length)
 
+  if (openIncident) {
+    return <IncidentView incidentId={openIncident} onBack={() => setOpenIncident(null)} />
+  }
+
   return (
     <div className="main">
       {/* Summary cards */}
@@ -128,6 +134,7 @@ export function Dashboard() {
                 monitorType={typeMap[a.monitorName]}
                 selected={selected === a.monitorName}
                 onSelect={a2 => setSelected(prev => prev === a2.monitorName ? null : a2.monitorName)}
+                onOpenIncident={setOpenIncident}
               />
             ))}
           </div>

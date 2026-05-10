@@ -32,9 +32,10 @@ interface AlarmCardProps {
   monitorType?: string
   selected?: boolean
   onSelect?: (alarm: AlarmState) => void
+  onOpenIncident?: (id: string) => void
 }
 
-export function AlarmCard({ alarm, monitorType, selected, onSelect }: AlarmCardProps) {
+export function AlarmCard({ alarm, monitorType, selected, onSelect, onOpenIncident }: AlarmCardProps) {
   return (
     <div
       className={`card ${alarm.status.toLowerCase()}${selected ? ' selected' : ''}${onSelect ? ' clickable' : ''}`}
@@ -85,6 +86,14 @@ export function AlarmCard({ alarm, monitorType, selected, onSelect }: AlarmCardP
               <div className="detail-row">
                 <span className="detail-label">Details</span>
                 <span className="detail-value detail-message">{alarm.message}</span>
+              </div>
+            )}
+            {alarm.incidentId && onOpenIncident && (
+              <div className="detail-row">
+                <span className="detail-label">Incident</span>
+                <span className="incident-link" onClick={e => { e.stopPropagation(); onOpenIncident(alarm.incidentId!) }}>
+                  {alarm.incidentId} →
+                </span>
               </div>
             )}
           </div>
