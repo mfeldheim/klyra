@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api, type HistoryEvent } from '../api/client'
-import { IncidentView } from './Incident'
 
 export function History() {
+  const navigate = useNavigate()
   const [events, setEvents] = useState<HistoryEvent[]>([])
   const [filter, setFilter] = useState('')
-  const [openIncident, setOpenIncident] = useState<string | null>(null)
 
   useEffect(() => {
     api.history().then(e => setEvents([...e].reverse())).catch(() => {})
   }, [])
-
-  if (openIncident) {
-    return <IncidentView incidentId={openIncident} onBack={() => setOpenIncident(null)} />
-  }
 
   const filtered = filter ? events.filter(e => e.monitorName.includes(filter)) : events
 
@@ -35,7 +31,7 @@ export function History() {
                 <td style={{ color: '#8b949e' }}>{ev.message || '—'}</td>
                 <td>
                   {ev.incidentId
-                    ? <span className="incident-link" onClick={() => setOpenIncident(ev.incidentId!)}>{ev.incidentId.slice(-12)}</span>
+                    ? <span className="incident-link" onClick={() => navigate(`/incidents/${ev.incidentId}`)}>{ev.incidentId.slice(-12)}</span>
                     : <span style={{ color: '#484f58' }}>—</span>}
                 </td>
               </tr>

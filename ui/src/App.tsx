@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { Dashboard } from './pages/Dashboard'
 import { History } from './pages/History'
 import { Config } from './pages/Config'
 import { Silences } from './pages/Silences'
+import { IncidentView } from './pages/Incident'
 import { api } from './api/client'
 import './index.css'
-
-type Tab = 'dashboard' | 'history' | 'config' | 'silences'
 
 function UserAvatar({ user }: { user: string }) {
   const [open, setOpen] = useState(false)
@@ -40,9 +40,17 @@ function UserAvatar({ user }: { user: string }) {
   )
 }
 
-export function App() {
-  const [tab, setTab] = useState<Tab>('dashboard')
+const NAV_TABS = [
+  { path: '/', label: 'Dashboard' },
+  { path: '/history', label: 'History' },
+  { path: '/config', label: 'Config' },
+  { path: '/silences', label: 'Silences' },
+]
+
+function AppInner() {
   const [user, setUser] = useState('')
+  const location = useLocation()
+  const navigate = useNavigate()
 
   useEffect(() => {
     api.me().then(r => setUser(r.user)).catch(() => {})
@@ -52,19 +60,40 @@ export function App() {
     <>
       <nav className="nav">
         <div className="nav-logo">kly<span>ra</span></div>
-        {(['dashboard', 'history', 'config', 'silences'] as Tab[]).map(t => (
-          <div key={t} className={`nav-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+        {NAV_TABS.map(t => (
+          <div
+            key={t.path}
+            className={`nav-tab${location.pathname === t.path ? ' active' : ''}`}
+            onClick={() => navigate(t.path)}
+          >
+            {t.label}
           </div>
         ))}
         <div className="nav-right">
           <UserAvatar user={user} />
         </div>
       </nav>
-      {tab === 'dashboard' && <Dashboard />}
-      {tab === 'history' && <History />}
-      {tab === 'config' && <Config />}
-      {tab === 'silences' && <Silences />}
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/config" element={<Config />} />
+        <Route path="/silences" element={<Silences />} />
+        <Route path="/incidents/:id" element={<IncidentRoute />} />
+      </Routes>
     </>
+  )
+}
+
+function IncidentRoute() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  return <IncidentView incidentId={id!} onBack={() => navigate(-1)} />
+}
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <AppInner />
+    </BrowserRouter>
   )
 }

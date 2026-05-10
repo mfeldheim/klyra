@@ -222,13 +222,14 @@ func (h *Handlers) StreamIncident(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Incident not active — replay from S3
-	inc, err := h.incStr.ReadIncident(r.Context(), id)
+	// Incident not active — replay full markdown content from S3
+	content, err := h.incStr.ReadContent(r.Context(), id)
 	if err != nil {
+		// Fallback: incident exists but content unreadable
 		http.Error(w, "incident not found", http.StatusNotFound)
 		return
 	}
-	data, _ := json.Marshal(map[string]string{"text": inc.InitialMarkdown()})
+	data, _ := json.Marshal(map[string]string{"text": content})
 	writeSSE(w, "delta", string(data))
 	doneData, _ := json.Marshal(map[string]string{})
 	writeSSE(w, "done", string(doneData))

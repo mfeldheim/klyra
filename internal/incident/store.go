@@ -19,6 +19,8 @@ type Store interface {
 	WriteIncident(ctx context.Context, inc *Incident) error
 	// ReadIncident reads incident metadata by ID.
 	ReadIncident(ctx context.Context, id string) (*Incident, error)
+	// ReadContent reads the full markdown content of an incident.
+	ReadContent(ctx context.Context, id string) (string, error)
 	// AppendContent appends text to the incident's markdown file.
 	AppendContent(ctx context.Context, id, content string) error
 	// ListIncidents returns the index of all incidents.
@@ -107,6 +109,15 @@ func (s *S3Store) ReadIncident(ctx context.Context, id string) (*Incident, error
 		return nil, fmt.Errorf("unmarshal incident %s: %w", id, err)
 	}
 	return &inc, nil
+}
+
+// ReadContent returns the full markdown content of an incident from S3.
+func (s *S3Store) ReadContent(ctx context.Context, id string) (string, error) {
+	data, err := s.get(ctx, s.mdKey(id))
+	if err != nil {
+		return "", fmt.Errorf("read content %s: %w", id, err)
+	}
+	return string(data), nil
 }
 
 // AppendContent reads the existing markdown, appends content, and rewrites it.

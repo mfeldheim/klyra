@@ -9,8 +9,9 @@ interface GroupTileProps {
   onClick: () => void
 }
 
-function worstStatus(alarms: AlarmState[]): 'firing' | 'unknown' | 'ok' {
+function worstStatus(alarms: AlarmState[]): 'firing' | 'pending' | 'unknown' | 'ok' {
   if (alarms.some(a => a.status === 'FIRING')) return 'firing'
+  if (alarms.some(a => a.pendingSince)) return 'pending'
   if (alarms.some(a => a.status === 'UNKNOWN')) return 'unknown'
   return 'ok'
 }
@@ -29,7 +30,7 @@ export function GroupTile({ name, alarms, typeMap, active, onClick }: GroupTileP
         {alarms.map(a => (
           <div
             key={a.monitorName}
-            className={`monitor-tile ${a.status.toLowerCase()}`}
+            className={`monitor-tile ${a.status.toLowerCase()}${a.pendingSince && a.status !== 'FIRING' ? ' pending' : ''}`}
             title={a.monitorName}
           >
             {typeIcon(typeMap[a.monitorName] ?? '', 20)}

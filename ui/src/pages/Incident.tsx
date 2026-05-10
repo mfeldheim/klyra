@@ -33,7 +33,8 @@ export function IncidentView({ incidentId, onBack }: Props) {
     })
     es.addEventListener('done', () => {
       es.close()
-      setActive(false)
+      // Refetch incident state — investigation completing doesn't mean the incident resolved.
+      api.getIncident(incidentId).then(r => setActive(r.active)).catch(() => setActive(false))
     })
     es.onerror = () => es.close()
 

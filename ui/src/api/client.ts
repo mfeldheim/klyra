@@ -8,6 +8,7 @@ export interface AlarmState {
   status: AlarmStatus
   lastCheck: string
   firedAt?: string
+  pendingSince?: string
   lastValue?: unknown
   message?: string
   icon?: string
