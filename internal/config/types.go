@@ -6,8 +6,20 @@ import (
 )
 
 type Config struct {
-	Monitors []MonitorConfig `yaml:"monitors" json:"monitors"`
-	Actions  []ActionConfig  `yaml:"actions" json:"actions"`
+	Monitors  []MonitorConfig  `yaml:"monitors"  json:"monitors"`
+	Actions   []ActionConfig   `yaml:"actions"   json:"actions"`
+	Incidents *IncidentsConfig `yaml:"incidents" json:"incidents,omitempty"`
+}
+
+type IncidentsConfig struct {
+	S3Bucket string `yaml:"s3_bucket" json:"s3Bucket"`
+	S3Prefix string `yaml:"s3_prefix" json:"s3Prefix"`
+	S3Region string `yaml:"s3_region" json:"s3Region"`
+}
+
+type AIInvestigateConfig struct {
+	BedrockRegion string `yaml:"bedrock_region"`
+	Model         string `yaml:"model"`
 }
 
 type MonitorConfig struct {

@@ -28,7 +28,7 @@ func TestDispatcherFiresOnEvent(t *testing.T) {
 	monitorActions := map[string][]string{"test": {"notify"}}
 	st := state.NewStore()
 
-	d := engine.NewDispatcher(st, actionMap, monitorActions)
+	d := engine.NewDispatcher(st, actionMap, monitorActions, nil)
 	ev := state.AlarmEvent{MonitorName: "test", Transition: state.TransitionFiring, FiredAt: time.Now()}
 	d.Dispatch(context.Background(), ev)
 
@@ -44,7 +44,7 @@ func TestDispatcherSkipsSilenced(t *testing.T) {
 	st := state.NewStore()
 	st.AddSilence(state.Silence{ID: "1", MonitorName: "test", Until: time.Now().Add(time.Hour)})
 
-	d := engine.NewDispatcher(st, actionMap, monitorActions)
+	d := engine.NewDispatcher(st, actionMap, monitorActions, nil)
 	ev := state.AlarmEvent{MonitorName: "test", Transition: state.TransitionFiring, FiredAt: time.Now()}
 	d.Dispatch(context.Background(), ev)
 
@@ -60,7 +60,7 @@ func TestDispatcherSkipsMissingAction(t *testing.T) {
 	monitorActions := map[string][]string{"test": {"ghost", "real"}}
 	st := state.NewStore()
 
-	d := engine.NewDispatcher(st, actionMap, monitorActions)
+	d := engine.NewDispatcher(st, actionMap, monitorActions, nil)
 	ev := state.AlarmEvent{MonitorName: "test", Transition: state.TransitionFiring, FiredAt: time.Now()}
 	d.Dispatch(context.Background(), ev)
 
@@ -87,7 +87,7 @@ func TestDispatcherContinuesOnFireError(t *testing.T) {
 	monitorActions := map[string][]string{"test": {"err", "ok"}}
 	st := state.NewStore()
 
-	d := engine.NewDispatcher(st, actionMap, monitorActions)
+	d := engine.NewDispatcher(st, actionMap, monitorActions, nil)
 	ev := state.AlarmEvent{MonitorName: "test", Transition: state.TransitionFiring, FiredAt: time.Now()}
 	d.Dispatch(context.Background(), ev)
 

@@ -310,8 +310,8 @@ func TestWorkloadsReadyAllHealthy(t *testing.T) {
 	if r.Status != state.CheckOK {
 		t.Errorf("expected OK, got %s: %s", r.Status, r.Message)
 	}
-	if r.Value != false {
-		t.Errorf("expected Value=false (all healthy), got %v: %s", r.Value, r.Message)
+	if r.Value != true {
+		t.Errorf("expected Value=true (all healthy), got %v: %s", r.Value, r.Message)
 	}
 }
 
@@ -336,8 +336,8 @@ func TestWorkloadsReadyDegradedDeployment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Value != true {
-		t.Errorf("expected Value=true (degraded deploy), got %v", r.Value)
+	if r.Value != false {
+		t.Errorf("expected Value=false (degraded deploy), got %v", r.Value)
 	}
 	if !strings.Contains(r.Message, "deploy/api") {
 		t.Errorf("expected deploy/api in message, got %q", r.Message)
@@ -368,8 +368,8 @@ func TestWorkloadsReadyDegradedStatefulSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Value != true {
-		t.Errorf("expected Value=true (degraded sts), got %v", r.Value)
+	if r.Value != false {
+		t.Errorf("expected Value=false (degraded sts), got %v", r.Value)
 	}
 	if !strings.Contains(r.Message, "sts/db") {
 		t.Errorf("expected sts/db in message, got %q", r.Message)
@@ -398,8 +398,8 @@ func TestWorkloadsReadyDegradedDaemonSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Value != true {
-		t.Errorf("expected Value=true (degraded ds), got %v", r.Value)
+	if r.Value != false {
+		t.Errorf("expected Value=false (degraded ds), got %v", r.Value)
 	}
 	if !strings.Contains(r.Message, "ds/agent") {
 		t.Errorf("expected ds/agent in message, got %q", r.Message)
@@ -430,8 +430,8 @@ func TestWorkloadsReadySkipsPausedDeployment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Value != false {
-		t.Errorf("expected Value=false (paused deploy skipped), got %v: %s", r.Value, r.Message)
+	if r.Value != true {
+		t.Errorf("expected Value=true (paused deploy skipped), got %v: %s", r.Value, r.Message)
 	}
 	if r.Message != "all workloads ready" {
 		t.Errorf("expected 'all workloads ready', got %q", r.Message)
@@ -465,7 +465,7 @@ func TestWorkloadsReadyLabelSelector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Value != false {
-		t.Errorf("expected Value=false (worker is healthy, api excluded by selector), got %v: %s", r.Value, r.Message)
+	if r.Value != true {
+		t.Errorf("expected Value=true (worker is healthy, api excluded by selector), got %v: %s", r.Value, r.Message)
 	}
 }

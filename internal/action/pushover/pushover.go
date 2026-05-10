@@ -108,8 +108,12 @@ func (a *pushoverAction) Fire(ctx context.Context, ev state.AlarmEvent) error {
 		form.Set("expire", "3600")
 	}
 	if a.dashboardURL != "" {
-		form.Set("url", a.dashboardURL)
-		form.Set("url_title", "Open Klyra Dashboard")
+		incidentURL := a.dashboardURL
+		if ev.IncidentID != "" {
+			incidentURL = a.dashboardURL + "/incidents/" + ev.IncidentID
+		}
+		form.Set("url", incidentURL)
+		form.Set("url_title", "Open Klyra")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.apiURL,

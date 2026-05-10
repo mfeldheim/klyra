@@ -3,6 +3,10 @@ kind: ServiceAccount
 metadata:
   name: {{ include "klyra.name" . }}
   namespace: {{ include "klyra.namespace" . }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -123,4 +127,35 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: {{ include "klyra.name" . }}-workloads
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "klyra.name" . }}-investigate
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, configmaps, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods, nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "klyra.name" . }}-investigate
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "klyra.name" . }}
+    namespace: {{ include "klyra.namespace" . }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "klyra.name" . }}-investigate
   apiGroup: rbac.authorization.k8s.io

@@ -47,6 +47,7 @@ type AlarmState struct {
 	Message       string      `json:"message,omitempty"`
 	Icon          string      `json:"icon,omitempty"`
 	Group         string      `json:"group,omitempty"`
+	IncidentID    *string     `json:"incidentId,omitempty"`
 }
 
 type HistoryEvent struct {
@@ -64,6 +65,7 @@ type AlarmEvent struct {
 	FiredAt     time.Time
 	Icon        string
 	Priority    *int
+	IncidentID  string
 }
 
 type Silence struct {

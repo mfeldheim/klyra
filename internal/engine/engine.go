@@ -11,6 +11,7 @@ import (
 
 	"github.com/mfeldheim/klyra/internal/action"
 	"github.com/mfeldheim/klyra/internal/config"
+	"github.com/mfeldheim/klyra/internal/incident"
 	"github.com/mfeldheim/klyra/internal/monitor"
 	k8smon "github.com/mfeldheim/klyra/internal/monitor/kubernetes"
 	"github.com/mfeldheim/klyra/internal/state"
@@ -48,7 +49,7 @@ func New(cfg *config.Config, st *state.Store, k8sClient kubernetes.Interface, na
 		}
 	}
 
-	dispatcher := NewDispatcher(st, actions, monitorActions)
+	dispatcher := NewDispatcher(st, actions, monitorActions, nil)
 	writer := NewStateWriter(st, k8sClient, namespace, "klyra-state")
 
 	return &Engine{
@@ -59,6 +60,12 @@ func New(cfg *config.Config, st *state.Store, k8sClient kubernetes.Interface, na
 		k8sClient:  k8sClient,
 		namespace:  namespace,
 	}, nil
+}
+
+// SetIncidentManager wires an incident.Manager into the dispatcher.
+// Call before Run.
+func (e *Engine) SetIncidentManager(mgr *incident.Manager) {
+	e.dispatcher.incMgr = mgr
 }
 
 // Run starts all monitors, the state writer, and the evaluate loop.

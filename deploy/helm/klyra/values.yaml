@@ -22,3 +22,7 @@ leaderElection:
   leaseName: klyra-leader
 
 namespace: ""  # defaults to release namespace
+
+serviceAccount:
+  annotations: {}  # e.g. eks.amazonaws.com/role-arn for IRSA
+

@@ -192,8 +192,8 @@ func TestPushoverAction(t *testing.T) {
 				if got := capturedForm.Get("url"); got != dashURL {
 					t.Errorf("url: got %q, want %q", got, dashURL)
 				}
-				if got := capturedForm.Get("url_title"); got != "Open Klyra Dashboard" {
-					t.Errorf("url_title: got %q, want %q", got, "Open Klyra Dashboard")
+				if got := capturedForm.Get("url_title"); got != "Open Klyra" {
+					t.Errorf("url_title: got %q, want %q", got, "Open Klyra")
 				}
 			}
 		})

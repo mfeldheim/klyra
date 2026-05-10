@@ -537,7 +537,7 @@ func (m *k8sMonitor) checkWorkloadsReady(ctx context.Context, now time.Time) (st
 	return state.CheckResult{
 		MonitorName: m.name,
 		Status:      state.CheckOK,
-		Value:       anyNotReady,
+		Value:       !anyNotReady,
 		Message:     msg,
 		Timestamp:   now,
 	}, nil
