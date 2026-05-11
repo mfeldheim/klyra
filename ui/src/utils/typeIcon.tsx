@@ -12,6 +12,10 @@ import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded'
 
 const s = (size: number) => ({ fontSize: size, width: size, height: size })
 
+function emojiIcon(text: string, size: number): JSX.Element {
+  return <span style={{ fontSize: size, lineHeight: 1 }}>{text}</span>
+}
+
 export function typeIcon(type: string, size = 16): JSX.Element {
   switch (type) {
     case 'http': return <LanguageRounded style={s(size)} />
@@ -24,6 +28,7 @@ export function typeIcon(type: string, size = 16): JSX.Element {
 
 export function iconFromName(name: string, size = 16): JSX.Element {
   switch (name) {
+    case 'StorageRounded': return <StorageRounded style={s(size)} />
     case 'globe': return <LanguageRounded style={s(size)} />
     case 'kubernetes': return <HexagonRounded style={s(size)} />
     case 'network': return <LanRounded style={s(size)} />
@@ -32,6 +37,11 @@ export function iconFromName(name: string, size = 16): JSX.Element {
     case 'memory': return <MemoryRounded style={s(size)} />
     case 'lock': return <LockRounded style={s(size)} />
     case 'warning': return <WarningAmberRounded style={s(size)} />
-    default: return <HelpRounded style={s(size)} />
+    default:
+      // Backend can return resolved emoji (e.g. "🗄️") instead of icon names.
+      if (name && name.trim() !== '') {
+        return emojiIcon(name, size)
+      }
+      return <HelpRounded style={s(size)} />
   }
 }
