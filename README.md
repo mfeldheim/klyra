@@ -59,13 +59,61 @@ config:
   url: https://api.example.com/health   # required
   method: GET                           # default: GET
   timeout: 5s                           # default: 10s
-  expect_status: 200                    # default: 200
-  expect_body: '"status":"ok"'          # optional substring check
+  expect_status: 200                    # legacy shorthand (default: 200)
+  expect_body: '"status":"ok"'          # legacy shorthand substring check
   headers:
     Authorization: Bearer ${API_TOKEN}
+
+  # Advanced expressions (all optional). Operators:
+  # lt | gt | lte | gte | eq | neq | contains | matches
+  status:
+    operator: gte
+    value: 200
+
+  body:
+    operator: contains
+    value: healthy
+
+  header:
+    name: Content-Type
+    operator: contains
+    value: application/json
+
+  latency_ms:
+    operator: lt
+    value: 500
+
+  json:
+    path: disk.used_pct                 # dot path; array indexes supported (e.g. items.0.value)
+    operator: gt
+    value: 90
+
+  # Or use a boolean expression over JSON fields flattened with underscores.
+  # Example: payload.system.disk.used becomes payload_system_disk_used
+  # json:
+  #   expression: "(system_disk_used_bytes / system_disk_total_bytes) * 100 > 90"
 ```
 
-Returns `Value: bool` — `true` if status and body checks pass.
+Returns `Value: bool` — `true` if all configured checks pass.
+
+Example: Typesense disk above 90% (via `/metrics.json`):
+
+```yaml
+- name: typesense-disk
+  type: http
+  interval: 30s
+  config:
+    url: http://typesense:8108/metrics.json
+    json:
+      expression: "(system_disk_used_bytes / system_disk_total_bytes) * 100 > 90"
+  threshold:
+    operator: eq
+    value: false
+    for: 2m
+  actions: [notify]
+```
+
+For percentage checks, point `json.path` to a percent field (if present) or use the `prometheus` monitor with a computed query.
 
 ---
 
