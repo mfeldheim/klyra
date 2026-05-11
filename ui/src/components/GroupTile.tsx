@@ -1,5 +1,5 @@
 import type { AlarmState } from '../api/client'
-import { typeIcon } from '../utils/typeIcon'
+import { typeIcon, iconFromName } from '../utils/typeIcon'
 
 interface GroupTileProps {
   name: string
@@ -33,7 +33,7 @@ export function GroupTile({ name, alarms, typeMap, active, onClick }: GroupTileP
             className={`monitor-tile ${a.status.toLowerCase()}${a.pendingSince && a.status !== 'FIRING' ? ' pending' : ''}`}
             title={a.monitorName}
           >
-            {typeIcon(typeMap[a.monitorName] ?? '', 20)}
+            {a.icon ? iconFromName(a.icon, 20) : typeIcon(typeMap[a.monitorName] ?? '', 20)}
             <div className="monitor-tile-name">{a.monitorName}</div>
           </div>
         ))}
