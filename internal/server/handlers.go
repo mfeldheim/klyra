@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,9 @@ import (
 	"github.com/mfeldheim/klyra/internal/config"
 	"github.com/mfeldheim/klyra/internal/incident"
 	"github.com/mfeldheim/klyra/internal/state"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // Handlers holds the dependencies for the HTTP API handlers.
@@ -21,6 +25,7 @@ type Handlers struct {
 	incMgr     *incident.Manager    // nil if incidents not configured
 	incStr     incident.Store       // nil if incidents not configured; used for list/get
 	chatRunner incident.InvRunner   // nil if AI chat not configured
+	k8sClient  kubernetes.Interface // optional; required for workload log streaming
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -38,6 +43,11 @@ func (h *Handlers) SetIncidentManager(mgr *incident.Manager, store incident.Stor
 // This avoids a circular import between server and investigate packages.
 func (h *Handlers) SetChatRunner(runner incident.InvRunner) {
 	h.chatRunner = runner
+}
+
+// SetK8sClient wires a Kubernetes client into handlers that need cluster reads.
+func (h *Handlers) SetK8sClient(client kubernetes.Interface) {
+	h.k8sClient = client
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -297,6 +307,116 @@ func (h *Handlers) ChatIncident(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// WorkloadLogs streams logs (SSE) from one pod of the target workload.
+// Query params: kind=deploy|sts|ds, namespace, name, follow=true|false
+func (h *Handlers) WorkloadLogs(w http.ResponseWriter, r *http.Request) {
+	if h.k8sClient == nil {
+		http.Error(w, "kubernetes client not configured", http.StatusNotImplemented)
+		return
+	}
+
+	kind := r.URL.Query().Get("kind")
+	namespace := r.URL.Query().Get("namespace")
+	name := r.URL.Query().Get("name")
+	follow := r.URL.Query().Get("follow") != "false"
+	if kind == "" || namespace == "" || name == "" {
+		http.Error(w, "kind, namespace and name are required", http.StatusBadRequest)
+		return
+	}
+
+	var selector string
+	var err error
+	switch kind {
+	case "deploy":
+		dep, getErr := h.k8sClient.AppsV1().Deployments(namespace).Get(r.Context(), name, metav1.GetOptions{})
+		if getErr != nil {
+			err = getErr
+			break
+		}
+		selector = metav1.FormatLabelSelector(dep.Spec.Selector)
+	case "sts":
+		sts, getErr := h.k8sClient.AppsV1().StatefulSets(namespace).Get(r.Context(), name, metav1.GetOptions{})
+		if getErr != nil {
+			err = getErr
+			break
+		}
+		selector = metav1.FormatLabelSelector(sts.Spec.Selector)
+	case "ds":
+		ds, getErr := h.k8sClient.AppsV1().DaemonSets(namespace).Get(r.Context(), name, metav1.GetOptions{})
+		if getErr != nil {
+			err = getErr
+			break
+		}
+		selector = metav1.FormatLabelSelector(ds.Spec.Selector)
+	default:
+		http.Error(w, "kind must be one of deploy|sts|ds", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, "failed to load workload: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	if selector == "" {
+		http.Error(w, "workload has empty selector", http.StatusBadRequest)
+		return
+	}
+
+	pods, err := h.k8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		http.Error(w, "failed to list pods: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(pods.Items) == 0 {
+		http.Error(w, "no pods found for workload", http.StatusNotFound)
+		return
+	}
+
+	pod := pickPodForLogs(pods.Items)
+	tail := int64(200)
+	stream, err := h.k8sClient.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+		Follow:     follow,
+		Timestamps: true,
+		TailLines:  &tail,
+	}).Stream(r.Context())
+	if err != nil {
+		http.Error(w, "failed to stream logs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stream.Close()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	meta, _ := json.Marshal(map[string]string{"pod": pod.Name, "namespace": namespace})
+	writeSSE(w, "meta", string(meta))
+
+	scanner := bufio.NewScanner(stream)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		payload, _ := json.Marshal(map[string]string{"line": fmt.Sprintf("[%s] %s", pod.Name, line)})
+		writeSSE(w, "line", string(payload))
+	}
+	if scanErr := scanner.Err(); scanErr != nil && r.Context().Err() == nil {
+		errData, _ := json.Marshal(map[string]string{"error": scanErr.Error()})
+		writeSSE(w, "error", string(errData))
+	}
+	doneData, _ := json.Marshal(map[string]string{})
+	writeSSE(w, "done", string(doneData))
+}
+
+func pickPodForLogs(pods []corev1.Pod) corev1.Pod {
+	for _, pod := range pods {
+		if pod.Status.Phase == corev1.PodRunning {
+			return pod
+		}
+	}
+	return pods[0]
 }
 
 // ensure context import is used

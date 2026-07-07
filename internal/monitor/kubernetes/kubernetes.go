@@ -4,6 +4,7 @@ package k8smon
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,26 @@ type k8sMonitor struct {
 	check     string
 	window    time.Duration // for events: only consider events within this window
 	client    kubernetes.Interface
+}
+
+type workloadReadiness struct {
+	kind      string
+	namespace string
+	name      string
+	ready     int32
+	desired   int32
+	selector  string
+}
+
+func (w workloadReadiness) message() string {
+	return fmt.Sprintf("%s/%s/%s (%d/%d)", w.kind, w.namespace, w.name, w.ready, w.desired)
+}
+
+func (w workloadReadiness) messageWithNodes(nodes string) string {
+	if nodes == "" {
+		return w.message()
+	}
+	return fmt.Sprintf("%s %s", w.message(), nodes)
 }
 
 // New is the factory registered under the "kubernetes" type.
@@ -108,6 +129,10 @@ func (m *k8sMonitor) Check(ctx context.Context) (state.CheckResult, error) {
 		return m.checkPodsReady(ctx, now)
 	case "workloads_ready":
 		return m.checkWorkloadsReady(ctx, now)
+	case "workloads_zero_ready":
+		return m.checkWorkloadsZeroReady(ctx, now)
+	case "workloads_partially_ready":
+		return m.checkWorkloadsPartiallyReady(ctx, now)
 	default:
 		return state.CheckResult{
 			MonitorName: m.name,
@@ -116,6 +141,148 @@ func (m *k8sMonitor) Check(ctx context.Context) (state.CheckResult, error) {
 			Timestamp:   now,
 		}, nil
 	}
+}
+
+func (m *k8sMonitor) listWorkloadReadiness(ctx context.Context, listOpts metav1.ListOptions) ([]workloadReadiness, error) {
+	var workloads []workloadReadiness
+
+	deps, err := m.client.AppsV1().Deployments(m.namespace).List(ctx, listOpts)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range deps.Items {
+		if d.Spec.Paused {
+			continue
+		}
+		desired := int32(1)
+		if d.Spec.Replicas != nil {
+			desired = *d.Spec.Replicas
+		}
+		selector := ""
+		if d.Spec.Selector != nil {
+			selector = metav1.FormatLabelSelector(d.Spec.Selector)
+			if selector == "<none>" {
+				selector = ""
+			}
+		}
+		workloads = append(workloads, workloadReadiness{
+			kind:      "deploy",
+			namespace: d.Namespace,
+			name:      d.Name,
+			ready:     d.Status.ReadyReplicas,
+			desired:   desired,
+			selector:  selector,
+		})
+	}
+
+	stss, err := m.client.AppsV1().StatefulSets(m.namespace).List(ctx, listOpts)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range stss.Items {
+		desired := int32(1)
+		if s.Spec.Replicas != nil {
+			desired = *s.Spec.Replicas
+		}
+		selector := ""
+		if s.Spec.Selector != nil {
+			selector = metav1.FormatLabelSelector(s.Spec.Selector)
+			if selector == "<none>" {
+				selector = ""
+			}
+		}
+		workloads = append(workloads, workloadReadiness{
+			kind:      "sts",
+			namespace: s.Namespace,
+			name:      s.Name,
+			ready:     s.Status.ReadyReplicas,
+			desired:   desired,
+			selector:  selector,
+		})
+	}
+
+	dss, err := m.client.AppsV1().DaemonSets(m.namespace).List(ctx, listOpts)
+	if err != nil {
+		return nil, err
+	}
+	for _, ds := range dss.Items {
+		selector := ""
+		if ds.Spec.Selector != nil {
+			selector = metav1.FormatLabelSelector(ds.Spec.Selector)
+			if selector == "<none>" {
+				selector = ""
+			}
+		}
+		workloads = append(workloads, workloadReadiness{
+			kind:      "ds",
+			namespace: ds.Namespace,
+			name:      ds.Name,
+			ready:     ds.Status.NumberReady,
+			desired:   ds.Status.DesiredNumberScheduled,
+			selector:  selector,
+		})
+	}
+
+	return workloads, nil
+}
+
+func (m *k8sMonitor) workloadNodeSummary(ctx context.Context, w workloadReadiness, nodeStatus map[string]string) string {
+	if w.selector == "" || w.selector == "<none>" {
+		return "nodes=unknown"
+	}
+
+	pods, err := m.client.CoreV1().Pods(w.namespace).List(ctx, metav1.ListOptions{LabelSelector: w.selector})
+	if err != nil {
+		return "nodes=unknown"
+	}
+
+	nodes := map[string]struct{}{}
+	pending := false
+	for _, pod := range pods.Items {
+		if pod.DeletionTimestamp != nil || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		if pod.Spec.NodeName == "" {
+			pending = true
+			continue
+		}
+		nodes[pod.Spec.NodeName] = struct{}{}
+	}
+
+	if len(nodes) == 0 {
+		if pending {
+			return "nodes=pending:Unscheduled"
+		}
+		return "nodes=none"
+	}
+
+	names := make([]string, 0, len(nodes))
+	for n := range nodes {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	parts := make([]string, 0, len(names)+1)
+	for _, name := range names {
+		status, ok := nodeStatus[name]
+		if !ok {
+			node, err := m.client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				status = "Unknown"
+			} else if nodeConditionTrue(*node, corev1.NodeReady) {
+				status = "Ready"
+			} else {
+				status = "NotReady"
+			}
+			nodeStatus[name] = status
+		}
+		parts = append(parts, fmt.Sprintf("%s:%s", name, status))
+	}
+	if pending {
+		parts = append(parts, "pending:Unscheduled")
+	}
+
+	return fmt.Sprintf("nodes=%s", strings.Join(parts, ","))
 }
 
 // checkDeployment fetches a Deployment and evaluates the configured check.
@@ -468,61 +635,21 @@ func (m *k8sMonitor) checkWorkloadsReady(ctx context.Context, now time.Time) (st
 		listOpts.LabelSelector = m.check
 	}
 
+	workloads, err := m.listWorkloadReadiness(ctx, listOpts)
+	if err != nil {
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckError,
+			Message:     err.Error(),
+			Timestamp:   now,
+		}, nil
+	}
+
 	var notReady []string
-
-	deps, err := m.client.AppsV1().Deployments(m.namespace).List(ctx, listOpts)
-	if err != nil {
-		return state.CheckResult{
-			MonitorName: m.name,
-			Status:      state.CheckError,
-			Message:     err.Error(),
-			Timestamp:   now,
-		}, nil
-	}
-	for _, d := range deps.Items {
-		if d.Spec.Paused {
-			continue
-		}
-		desired := int32(1)
-		if d.Spec.Replicas != nil {
-			desired = *d.Spec.Replicas
-		}
-		if d.Status.ReadyReplicas < desired {
-			notReady = append(notReady, fmt.Sprintf("deploy/%s (%d/%d)", d.Name, d.Status.ReadyReplicas, desired))
-		}
-	}
-
-	stss, err := m.client.AppsV1().StatefulSets(m.namespace).List(ctx, listOpts)
-	if err != nil {
-		return state.CheckResult{
-			MonitorName: m.name,
-			Status:      state.CheckError,
-			Message:     err.Error(),
-			Timestamp:   now,
-		}, nil
-	}
-	for _, s := range stss.Items {
-		desired := int32(1)
-		if s.Spec.Replicas != nil {
-			desired = *s.Spec.Replicas
-		}
-		if s.Status.ReadyReplicas < desired {
-			notReady = append(notReady, fmt.Sprintf("sts/%s (%d/%d)", s.Name, s.Status.ReadyReplicas, desired))
-		}
-	}
-
-	dss, err := m.client.AppsV1().DaemonSets(m.namespace).List(ctx, listOpts)
-	if err != nil {
-		return state.CheckResult{
-			MonitorName: m.name,
-			Status:      state.CheckError,
-			Message:     err.Error(),
-			Timestamp:   now,
-		}, nil
-	}
-	for _, ds := range dss.Items {
-		if ds.Status.NumberReady < ds.Status.DesiredNumberScheduled {
-			notReady = append(notReady, fmt.Sprintf("ds/%s (%d/%d)", ds.Name, ds.Status.NumberReady, ds.Status.DesiredNumberScheduled))
+	nodeStatus := map[string]string{}
+	for _, w := range workloads {
+		if w.desired > 0 && w.ready < w.desired {
+			notReady = append(notReady, w.messageWithNodes(m.workloadNodeSummary(ctx, w, nodeStatus)))
 		}
 	}
 
@@ -538,6 +665,88 @@ func (m *k8sMonitor) checkWorkloadsReady(ctx context.Context, now time.Time) (st
 		MonitorName: m.name,
 		Status:      state.CheckOK,
 		Value:       !anyNotReady,
+		Message:     msg,
+		Timestamp:   now,
+	}, nil
+}
+
+func (m *k8sMonitor) checkWorkloadsZeroReady(ctx context.Context, now time.Time) (state.CheckResult, error) {
+	listOpts := metav1.ListOptions{}
+	if m.check != "" {
+		listOpts.LabelSelector = m.check
+	}
+
+	workloads, err := m.listWorkloadReadiness(ctx, listOpts)
+	if err != nil {
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckError,
+			Message:     err.Error(),
+			Timestamp:   now,
+		}, nil
+	}
+
+	var zeroReady []string
+	nodeStatus := map[string]string{}
+	for _, w := range workloads {
+		if w.desired > 0 && w.ready == 0 {
+			zeroReady = append(zeroReady, w.messageWithNodes(m.workloadNodeSummary(ctx, w, nodeStatus)))
+		}
+	}
+
+	anyZeroReady := len(zeroReady) > 0
+	var msg string
+	if anyZeroReady {
+		msg = fmt.Sprintf("zero ready: %s", strings.Join(zeroReady, ", "))
+	} else {
+		msg = "no zero-ready workloads"
+	}
+
+	return state.CheckResult{
+		MonitorName: m.name,
+		Status:      state.CheckOK,
+		Value:       !anyZeroReady,
+		Message:     msg,
+		Timestamp:   now,
+	}, nil
+}
+
+func (m *k8sMonitor) checkWorkloadsPartiallyReady(ctx context.Context, now time.Time) (state.CheckResult, error) {
+	listOpts := metav1.ListOptions{}
+	if m.check != "" {
+		listOpts.LabelSelector = m.check
+	}
+
+	workloads, err := m.listWorkloadReadiness(ctx, listOpts)
+	if err != nil {
+		return state.CheckResult{
+			MonitorName: m.name,
+			Status:      state.CheckError,
+			Message:     err.Error(),
+			Timestamp:   now,
+		}, nil
+	}
+
+	var partiallyReady []string
+	nodeStatus := map[string]string{}
+	for _, w := range workloads {
+		if w.desired > 0 && w.ready > 0 && w.ready < w.desired {
+			partiallyReady = append(partiallyReady, w.messageWithNodes(m.workloadNodeSummary(ctx, w, nodeStatus)))
+		}
+	}
+
+	anyPartiallyReady := len(partiallyReady) > 0
+	var msg string
+	if anyPartiallyReady {
+		msg = fmt.Sprintf("partially ready: %s", strings.Join(partiallyReady, ", "))
+	} else {
+		msg = "no partially-ready workloads"
+	}
+
+	return state.CheckResult{
+		MonitorName: m.name,
+		Status:      state.CheckOK,
+		Value:       !anyPartiallyReady,
 		Message:     msg,
 		Timestamp:   now,
 	}, nil

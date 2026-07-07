@@ -339,8 +339,8 @@ func TestWorkloadsReadyDegradedDeployment(t *testing.T) {
 	if r.Value != false {
 		t.Errorf("expected Value=false (degraded deploy), got %v", r.Value)
 	}
-	if !strings.Contains(r.Message, "deploy/api") {
-		t.Errorf("expected deploy/api in message, got %q", r.Message)
+	if !strings.Contains(r.Message, "deploy/default/api") {
+		t.Errorf("expected deploy/default/api in message, got %q", r.Message)
 	}
 	if !strings.Contains(r.Message, "1/3") {
 		t.Errorf("expected 1/3 in message, got %q", r.Message)
@@ -371,8 +371,8 @@ func TestWorkloadsReadyDegradedStatefulSet(t *testing.T) {
 	if r.Value != false {
 		t.Errorf("expected Value=false (degraded sts), got %v", r.Value)
 	}
-	if !strings.Contains(r.Message, "sts/db") {
-		t.Errorf("expected sts/db in message, got %q", r.Message)
+	if !strings.Contains(r.Message, "sts/default/db") {
+		t.Errorf("expected sts/default/db in message, got %q", r.Message)
 	}
 	if !strings.Contains(r.Message, "0/3") {
 		t.Errorf("expected 0/3 in message, got %q", r.Message)
@@ -401,11 +401,118 @@ func TestWorkloadsReadyDegradedDaemonSet(t *testing.T) {
 	if r.Value != false {
 		t.Errorf("expected Value=false (degraded ds), got %v", r.Value)
 	}
-	if !strings.Contains(r.Message, "ds/agent") {
-		t.Errorf("expected ds/agent in message, got %q", r.Message)
+	if !strings.Contains(r.Message, "ds/default/agent") {
+		t.Errorf("expected ds/default/agent in message, got %q", r.Message)
 	}
 	if !strings.Contains(r.Message, "3/5") {
 		t.Errorf("expected 3/5 in message, got %q", r.Message)
+	}
+}
+
+func TestWorkloadsZeroReadyDeployment(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	replicas := int32(3)
+
+	client.AppsV1().Deployments("default").Create(context.Background(), &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		Status:     appsv1.DeploymentStatus{ReadyReplicas: 0},
+	}, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "workloads_zero_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != false {
+		t.Errorf("expected Value=false (zero-ready workload), got %v", r.Value)
+	}
+	if !strings.Contains(r.Message, "deploy/default/api") {
+		t.Errorf("expected deploy/default/api in message, got %q", r.Message)
+	}
+	if !strings.Contains(r.Message, "0/3") {
+		t.Errorf("expected 0/3 in message, got %q", r.Message)
+	}
+}
+
+func TestWorkloadsPartiallyReadyDeployment(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	replicas := int32(3)
+
+	client.AppsV1().Deployments("default").Create(context.Background(), &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		Status:     appsv1.DeploymentStatus{ReadyReplicas: 1},
+	}, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "workloads_partially_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != false {
+		t.Errorf("expected Value=false (partially-ready workload), got %v", r.Value)
+	}
+	if !strings.Contains(r.Message, "deploy/default/api") {
+		t.Errorf("expected deploy/default/api in message, got %q", r.Message)
+	}
+	if !strings.Contains(r.Message, "1/3") {
+		t.Errorf("expected 1/3 in message, got %q", r.Message)
+	}
+}
+
+func TestWorkloadsReadyIncludesNodeStatus(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	replicas := int32(2)
+
+	client.CoreV1().Nodes().Create(context.Background(), &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type:   corev1.NodeReady,
+			Status: corev1.ConditionTrue,
+		}}},
+	}, metav1.CreateOptions{})
+
+	client.AppsV1().Deployments("default").Create(context.Background(), &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+		},
+		Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
+	}, metav1.CreateOptions{})
+
+	client.CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "default", Labels: map[string]string{"app": "api"}},
+		Spec:       corev1.PodSpec{NodeName: "node-a"},
+		Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+	}, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "workloads_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.Message, "nodes=node-a:Ready") {
+		t.Errorf("expected node readiness in message, got %q", r.Message)
 	}
 }
 

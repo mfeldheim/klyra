@@ -92,6 +92,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	h := server.NewHandlers(st, cfg)
+	h.SetK8sClient(k8sClient)
 
 	// Wire incident system if configured.
 	var incMgr *incident.Manager

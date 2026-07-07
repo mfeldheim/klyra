@@ -195,7 +195,33 @@ config:
   check: app=api           # optional label selector
 ```
 
-Returns `Value: bool` — `true` if any workload is degraded. The message names each degraded workload and its replica count, e.g. `not ready: deploy/api (1/3), sts/db (0/2)`.
+Returns `Value: bool` — `true` when all workloads are healthy, `false` when any workload is degraded. The message names each degraded workload with namespace and replica count and appends node placement/readiness, e.g. `not ready: deploy/production/api (1/3) nodes=ip-10-0-1-12:Ready,pending:Unscheduled, sts/production/db (0/2) nodes=ip-10-0-2-44:NotReady`.
+
+#### `workloads_zero_ready`
+
+Checks Deployments, StatefulSets, and DaemonSets and reports only workloads with zero ready replicas (`0/<desired>`). Paused Deployments are skipped.
+
+```yaml
+config:
+  kind: workloads_zero_ready
+  namespace: production    # or "" for cluster-wide
+  check: app=api           # optional label selector
+```
+
+Returns `Value: bool` — `true` when no workload is at `0/<desired>`, `false` when at least one workload is zero-ready.
+
+#### `workloads_partially_ready`
+
+Checks Deployments, StatefulSets, and DaemonSets and reports only partially ready workloads (`<desired-n>/<desired>` where ready is greater than zero). Paused Deployments are skipped.
+
+```yaml
+config:
+  kind: workloads_partially_ready
+  namespace: production    # or "" for cluster-wide
+  check: app=api           # optional label selector
+```
+
+Returns `Value: bool` — `true` when no workload is partially ready, `false` when at least one workload is partially ready.
 
 ---
 

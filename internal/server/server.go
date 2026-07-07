@@ -27,6 +27,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/status", s.handlers.Status)
 	mux.HandleFunc("/api/history", s.handlers.History)
 	mux.HandleFunc("/api/config", s.handlers.Config)
+	mux.HandleFunc("/api/workloads/logs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			s.handlers.WorkloadLogs(w, r)
+		} else {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/silences", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
