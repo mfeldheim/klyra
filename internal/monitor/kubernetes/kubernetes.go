@@ -27,6 +27,7 @@ type k8sMonitor struct {
 	resName   string // resource name; for events, reused as reason filter
 	check     string
 	window    time.Duration // for events: only consider events within this window
+	exemptSingleReplicaDeploymentsInZeroReady bool
 	client    kubernetes.Interface
 }
 
@@ -66,6 +67,13 @@ func NewWithClient(name string, cfg map[string]any, client kubernetes.Interface)
 	check, _ := cfgString(cfg, "check", false)
 	namespace, _ := cfgString(cfg, "namespace", false)
 	resName, _ := cfgString(cfg, "name", false)
+	exemptSingleReplicaDeploymentsInZeroReady, err := cfgBool(cfg, "exempt_single_replica_deployments", false)
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes monitor %q: %w", name, err)
+	}
+	if !hasCfgKey(cfg, "exempt_single_replica_deployments") {
+		exemptSingleReplicaDeploymentsInZeroReady = true
+	}
 
 	var window time.Duration
 	if v, ok := cfg["window"]; ok {
@@ -92,8 +100,14 @@ func NewWithClient(name string, cfg map[string]any, client kubernetes.Interface)
 		resName:   resName,
 		check:     check,
 		window:    window,
+		exemptSingleReplicaDeploymentsInZeroReady: exemptSingleReplicaDeploymentsInZeroReady,
 		client:    client,
 	}, nil
+}
+
+func hasCfgKey(cfg map[string]any, key string) bool {
+	_, ok := cfg[key]
+	return ok
 }
 
 // cfgString extracts a string value from a config map.
@@ -110,6 +124,21 @@ func cfgString(cfg map[string]any, key string, required bool) (string, error) {
 		return "", fmt.Errorf("field %q must be a string", key)
 	}
 	return s, nil
+}
+
+func cfgBool(cfg map[string]any, key string, required bool) (bool, error) {
+	v, ok := cfg[key]
+	if !ok {
+		if required {
+			return false, fmt.Errorf("missing required field %q", key)
+		}
+		return false, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false, fmt.Errorf("field %q must be a boolean", key)
+	}
+	return b, nil
 }
 
 func (m *k8sMonitor) Name() string { return m.name }
@@ -689,6 +718,9 @@ func (m *k8sMonitor) checkWorkloadsZeroReady(ctx context.Context, now time.Time)
 	var zeroReady []string
 	nodeStatus := map[string]string{}
 	for _, w := range workloads {
+		if m.exemptSingleReplicaDeploymentsInZeroReady && w.kind == "deploy" && w.desired == 1 {
+			continue
+		}
 		if w.desired > 0 && w.ready == 0 {
 			zeroReady = append(zeroReady, w.messageWithNodes(m.workloadNodeSummary(ctx, w, nodeStatus)))
 		}

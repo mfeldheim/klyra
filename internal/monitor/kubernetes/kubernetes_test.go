@@ -441,6 +441,68 @@ func TestWorkloadsZeroReadyDeployment(t *testing.T) {
 	}
 }
 
+func TestWorkloadsZeroReadySkipsSingleReplicaDeployment(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	replicas := int32(1)
+
+	client.AppsV1().Deployments("default").Create(context.Background(), &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		Status:     appsv1.DeploymentStatus{ReadyReplicas: 0},
+	}, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":      "workloads_zero_ready",
+		"namespace": "default",
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != true {
+		t.Errorf("expected Value=true (single-replica deployment exempt), got %v", r.Value)
+	}
+	if r.Message != "no zero-ready workloads" {
+		t.Errorf("expected 'no zero-ready workloads', got %q", r.Message)
+	}
+}
+
+func TestWorkloadsZeroReadySingleReplicaDeploymentCanBeIncluded(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	replicas := int32(1)
+
+	client.AppsV1().Deployments("default").Create(context.Background(), &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+		Status:     appsv1.DeploymentStatus{ReadyReplicas: 0},
+	}, metav1.CreateOptions{})
+
+	m, err := k8smon.NewWithClient("test", map[string]any{
+		"kind":                              "workloads_zero_ready",
+		"namespace":                         "default",
+		"exempt_single_replica_deployments": false,
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Value != false {
+		t.Errorf("expected Value=false when exemption is disabled, got %v", r.Value)
+	}
+	if !strings.Contains(r.Message, "deploy/default/api") {
+		t.Errorf("expected deploy/default/api in message, got %q", r.Message)
+	}
+	if !strings.Contains(r.Message, "0/1") {
+		t.Errorf("expected 0/1 in message, got %q", r.Message)
+	}
+}
+
 func TestWorkloadsPartiallyReadyDeployment(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	replicas := int32(3)

@@ -206,9 +206,11 @@ config:
   kind: workloads_zero_ready
   namespace: production    # or "" for cluster-wide
   check: app=api           # optional label selector
+  exempt_single_replica_deployments: true  # optional, default true
 ```
 
 Returns `Value: bool` — `true` when no workload is at `0/<desired>`, `false` when at least one workload is zero-ready.
+When `exempt_single_replica_deployments` is `true` (default), `Deployment` workloads at `0/1` are ignored by this monitor.
 
 #### `workloads_partially_ready`
 
