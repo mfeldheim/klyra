@@ -33,7 +33,7 @@ function UserAvatar({ user }: { user: string }) {
       {open && (
         <div className="avatar-menu">
           <div className="avatar-menu-user">{user}</div>
-          <a className="avatar-menu-item" href="/oauth2/sign_out">Sign out</a>
+          <a className="avatar-menu-item" href="/cdn-cgi/access/logout">Sign out</a>
         </div>
       )}
     </div>

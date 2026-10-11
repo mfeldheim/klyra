@@ -58,7 +58,6 @@ export interface Incident {
   firedAt: string
   resolvedAt?: string
   status: 'active' | 'resolved'
-  investigationStatus: 'pending' | 'running' | 'complete' | 'failed'
   value?: unknown
   message?: string
   icon?: string
@@ -67,6 +66,7 @@ export interface Incident {
 export interface IncidentResponse {
   incident: Incident
   active: boolean
+  content: string
 }
 
 async function get<T>(path: string): Promise<T> {
@@ -100,10 +100,4 @@ export const api = {
   deleteSilence: (id: string) => del(`/api/silences/${id}`),
   me: () => get<MeResponse>('/api/me'),
   getIncident: (id: string) => get<IncidentResponse>(`/api/incidents/${id}`),
-  chatIncident: (id: string, message: string) =>
-    fetch(`/api/incidents/${id}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
-    }),
 }

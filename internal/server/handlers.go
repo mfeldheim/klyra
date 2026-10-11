@@ -2,7 +2,6 @@ package server
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,12 +19,12 @@ import (
 
 // Handlers holds the dependencies for the HTTP API handlers.
 type Handlers struct {
-	store      *state.Store
-	cfg        *config.Config
-	incMgr     *incident.Manager    // nil if incidents not configured
-	incStr     incident.Store       // nil if incidents not configured; used for list/get
-	chatRunner incident.InvRunner   // nil if AI chat not configured
-	k8sClient  kubernetes.Interface // optional; required for workload log streaming
+	store     *state.Store
+	cfg       *config.Config
+	incMgr    *incident.Manager    // nil if incidents not configured
+	incStr    incident.Store       // nil if incidents not configured; used for list/get
+	k8sClient kubernetes.Interface // optional; required for workload log streaming
+	mcp       http.Handler         // optional; MCP server mounted at /mcp
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -39,10 +38,9 @@ func (h *Handlers) SetIncidentManager(mgr *incident.Manager, store incident.Stor
 	h.incStr = store
 }
 
-// SetChatRunner wires the AI chat runner into the handlers.
-// This avoids a circular import between server and investigate packages.
-func (h *Handlers) SetChatRunner(runner incident.InvRunner) {
-	h.chatRunner = runner
+// SetMCPHandler wires the MCP server handler into the handlers.
+func (h *Handlers) SetMCPHandler(handler http.Handler) {
+	h.mcp = handler
 }
 
 // SetK8sClient wires a Kubernetes client into handlers that need cluster reads.
@@ -124,18 +122,13 @@ func (h *Handlers) DeleteSilence(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Me responds with the authenticated user extracted from oauth2-proxy headers.
+// Me responds with the authenticated user. Identity is injected by Cloudflare
+// Access as the Cf-Access-Authenticated-User-Email header.
 func Me(w http.ResponseWriter, r *http.Request) {
-	user := ""
-	for _, hdr := range []string{
-		"X-Auth-Request-Preferred-Username",
-		"X-Auth-Request-User",
-		"X-Forwarded-User",
-	} {
-		if v := r.Header.Get(hdr); v != "" {
-			user = v
-			break
-		}
+	user := r.Header.Get("Cf-Access-Authenticated-User-Email")
+	if user == "" {
+		// Fallback for local development / non-Access deployments.
+		user = r.Header.Get("X-Forwarded-User")
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"user": user})
 }
@@ -163,14 +156,12 @@ func (h *Handlers) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, idx)
 }
 
-// GetIncident returns incident metadata by ID from S3.
+// GetIncident returns incident metadata and its recorded log by ID from S3.
 func (h *Handlers) GetIncident(w http.ResponseWriter, r *http.Request) {
 	if !h.incidentsEnabled(w) {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/incidents/")
-	id = strings.TrimSuffix(id, "/stream")
-	id = strings.TrimSuffix(id, "/chat")
 	if id == "" {
 		http.Error(w, "missing incident id", http.StatusBadRequest)
 		return
@@ -180,8 +171,9 @@ func (h *Handlers) GetIncident(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "incident not found", http.StatusNotFound)
 		return
 	}
+	content, _ := h.incStr.ReadContent(r.Context(), id)
 	active := h.incMgr != nil && h.incMgr.IsActive(inc.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"incident": inc, "active": active})
+	writeJSON(w, http.StatusOK, map[string]any{"incident": inc, "active": active, "content": content})
 }
 
 // writeSSE writes a single SSE event to the response.
@@ -189,123 +181,6 @@ func writeSSE(w http.ResponseWriter, event, data string) {
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
-	}
-}
-
-// StreamIncident streams the investigation output via SSE.
-// If the investigation is live, it streams deltas in real time.
-// If complete, it sends the full buffered content in one shot.
-func (h *Handlers) StreamIncident(w http.ResponseWriter, r *http.Request) {
-	if !h.incidentsEnabled(w) {
-		return
-	}
-	id := strings.TrimPrefix(r.URL.Path, "/api/incidents/")
-	id = strings.TrimSuffix(id, "/stream")
-	if id == "" {
-		http.Error(w, "missing incident id", http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	// Try live stream first
-	if h.incMgr != nil {
-		if ch := h.incMgr.Subscribe(id); ch != nil {
-			defer h.incMgr.Unsubscribe(id, ch)
-			for {
-				select {
-				case text, ok := <-ch:
-					if !ok {
-						data, _ := json.Marshal(map[string]string{})
-						writeSSE(w, "done", string(data))
-						return
-					}
-					data, _ := json.Marshal(map[string]string{"text": text})
-					writeSSE(w, "delta", string(data))
-				case <-r.Context().Done():
-					return
-				}
-			}
-		}
-	}
-
-	// Incident not active — replay full markdown content from S3
-	content, err := h.incStr.ReadContent(r.Context(), id)
-	if err != nil {
-		// Fallback: incident exists but content unreadable
-		http.Error(w, "incident not found", http.StatusNotFound)
-		return
-	}
-	data, _ := json.Marshal(map[string]string{"text": content})
-	writeSSE(w, "delta", string(data))
-	doneData, _ := json.Marshal(map[string]string{})
-	writeSSE(w, "done", string(doneData))
-}
-
-type chatRequest struct {
-	Message string `json:"message"`
-}
-
-// ChatIncident appends a user message to the investigation and streams the response.
-func (h *Handlers) ChatIncident(w http.ResponseWriter, r *http.Request) {
-	if !h.incidentsEnabled(w) {
-		return
-	}
-	if h.incMgr == nil {
-		http.Error(w, "incidents not configured", http.StatusNotImplemented)
-		return
-	}
-
-	id := strings.TrimPrefix(r.URL.Path, "/api/incidents/")
-	id = strings.TrimSuffix(id, "/chat")
-	if id == "" {
-		http.Error(w, "missing incident id", http.StatusBadRequest)
-		return
-	}
-
-	var req chatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Message == "" {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	if !h.incMgr.IsActive(id) {
-		http.Error(w, "incident not active — chat session ended", http.StatusGone)
-		return
-	}
-
-	if h.chatRunner == nil {
-		http.Error(w, "chat not configured", http.StatusNotImplemented)
-		return
-	}
-
-	ch, err := h.incMgr.Chat(r.Context(), id, req.Message, h.chatRunner)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	for {
-		select {
-		case text, ok := <-ch:
-			if !ok {
-				doneData, _ := json.Marshal(map[string]string{})
-				writeSSE(w, "done", string(doneData))
-				return
-			}
-			data, _ := json.Marshal(map[string]string{"text": text})
-			writeSSE(w, "delta", string(data))
-		case <-r.Context().Done():
-			return
-		}
 	}
 }
 
@@ -418,6 +293,3 @@ func pickPodForLogs(pods []corev1.Pod) corev1.Pod {
 	}
 	return pods[0]
 }
-
-// ensure context import is used
-var _ = context.Background

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -21,7 +20,6 @@ import (
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 
 	_ "github.com/mfeldheim/klyra/internal/action/http"
-	"github.com/mfeldheim/klyra/internal/action/investigate"
 	_ "github.com/mfeldheim/klyra/internal/action/pushover"
 	_ "github.com/mfeldheim/klyra/internal/monitor/cloudwatch"
 	_ "github.com/mfeldheim/klyra/internal/monitor/http"
@@ -30,12 +28,17 @@ import (
 	_ "github.com/mfeldheim/klyra/internal/monitor/promscr"
 
 	"github.com/mfeldheim/klyra/internal/config"
+	"github.com/mfeldheim/klyra/internal/diagnostics"
 	"github.com/mfeldheim/klyra/internal/engine"
 	"github.com/mfeldheim/klyra/internal/incident"
 	"github.com/mfeldheim/klyra/internal/leader"
+	"github.com/mfeldheim/klyra/internal/mcp"
 	"github.com/mfeldheim/klyra/internal/server"
 	"github.com/mfeldheim/klyra/internal/state"
 )
+
+// Version is the klyra build version; overridable at build time via -ldflags.
+var Version = "dev"
 
 var (
 	flagConfigPath string
@@ -96,18 +99,27 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Wire incident system if configured.
 	var incMgr *incident.Manager
+	var incStore incident.Store
 	if cfg.Incidents != nil {
-		incStore, mgr, chatRunner, wireErr := buildIncidentSystem(ctx, cfg, k8sClient)
+		store, mgr, wireErr := buildIncidentSystem(ctx, cfg)
 		if wireErr != nil {
 			log.Printf("warning: incident system disabled: %v", wireErr)
 		} else {
+			incStore = store
 			incMgr = mgr
-			h.SetIncidentManager(mgr, incStore)
-			if chatRunner != nil {
-				h.SetChatRunner(chatRunner)
-			}
+			h.SetIncidentManager(mgr, store)
 		}
 	}
+
+	// MCP server: read-only Kubernetes + klyra diagnostics for external agents.
+	metricsClient := buildMetricsClient(k8sClient)
+	k8sTools := diagnostics.NewK8sTools(k8sClient, metricsClient)
+	h.SetMCPHandler(mcp.New("klyra", Version, mcp.BuildTools(mcp.Deps{
+		K8s:       k8sTools,
+		Store:     st,
+		Config:    cfg,
+		Incidents: incStore,
+	})))
 
 	srv := server.New(h, server.UIFileSystem())
 	serverErr := make(chan error, 1)
@@ -171,66 +183,19 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// buildIncidentSystem constructs the S3 store, incident manager, and optional AI agent.
-// Returns a chatRunner only if an ai_investigate action is configured.
-func buildIncidentSystem(ctx context.Context, cfg *config.Config, k8sClient kubernetes.Interface) (incident.Store, *incident.Manager, incident.InvRunner, error) {
+// buildIncidentSystem constructs the S3-backed incident store and manager.
+func buildIncidentSystem(ctx context.Context, cfg *config.Config) (incident.Store, *incident.Manager, error) {
 	ic := cfg.Incidents
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(ic.S3Region))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("load AWS config: %w", err)
+		return nil, nil, fmt.Errorf("load AWS config: %w", err)
 	}
 
 	s3Client := s3.NewFromConfig(awsCfg)
 	incStore := incident.NewS3Store(s3Client, ic.S3Bucket, ic.S3Prefix)
 	mgr := incident.NewManager(incStore)
-
-	// Try to wire the AI investigation agent if an ai_investigate action is configured.
-	aiCfg := findAIConfig(cfg)
-	if aiCfg == nil {
-		return incStore, mgr, nil, nil
-	}
-
-	region, _ := aiCfg["bedrock_region"].(string)
-	model, _ := aiCfg["model"].(string)
-	if region == "" || model == "" {
-		log.Printf("warning: ai_investigate action missing bedrock_region or model, investigation disabled")
-		return incStore, mgr, nil, nil
-	}
-
-	bedrockCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
-	if err != nil {
-		log.Printf("warning: could not load Bedrock AWS config: %v", err)
-		return incStore, mgr, nil, nil
-	}
-
-	brc := bedrockruntime.NewFromConfig(bedrockCfg)
-	bedrockClient := investigate.NewRealBedrockClient(brc)
-
-	// Metrics client is optional; nil is handled gracefully by tools.
-	metricsClient := buildMetricsClient(k8sClient)
-
-	tools := investigate.NewK8sTools(k8sClient, metricsClient)
-	agent := investigate.NewAgent(bedrockClient, tools, model)
-
-	// Register the real factory before engine.New builds actions.
-	investigate.RegisterInvestigateFactory(mgr, agent)
-
-	chatRunner := incident.InvRunner(func(runCtx context.Context, history *[]incident.ConvMessage, emit func(string)) error {
-		return agent.Continue(runCtx, history, emit)
-	})
-
-	return incStore, mgr, chatRunner, nil
-}
-
-// findAIConfig returns the config map of the first ai_investigate action, or nil.
-func findAIConfig(cfg *config.Config) map[string]any {
-	for _, ac := range cfg.Actions {
-		if ac.Type == "ai_investigate" {
-			return ac.Config
-		}
-	}
-	return nil
+	return incStore, mgr, nil
 }
 
 // buildMetricsClient tries to build a metrics clientset from the same in-cluster config.

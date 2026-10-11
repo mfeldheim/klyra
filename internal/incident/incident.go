@@ -1,7 +1,6 @@
 package incident
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -16,64 +15,28 @@ const (
 	StatusResolved Status = "resolved"
 )
 
-type InvestigationStatus string
-
-const (
-	InvPending  InvestigationStatus = "pending"
-	InvRunning  InvestigationStatus = "running"
-	InvComplete InvestigationStatus = "complete"
-	InvFailed   InvestigationStatus = "failed"
-)
-
 type Incident struct {
-	ID                  string              `json:"id"`
-	MonitorName         string              `json:"monitorName"`
-	FiredAt             time.Time           `json:"firedAt"`
-	ResolvedAt          *time.Time          `json:"resolvedAt,omitempty"`
-	Status              Status              `json:"status"`
-	InvestigationStatus InvestigationStatus `json:"investigationStatus"`
-	Value               any                 `json:"value,omitempty"`
-	Message             string              `json:"message,omitempty"`
-	Icon                string              `json:"icon,omitempty"`
-	MonitorType         string              `json:"monitorType,omitempty"`
+	ID          string     `json:"id"`
+	MonitorName string     `json:"monitorName"`
+	FiredAt     time.Time  `json:"firedAt"`
+	ResolvedAt  *time.Time `json:"resolvedAt,omitempty"`
+	Status      Status     `json:"status"`
+	Value       any        `json:"value,omitempty"`
+	Message     string     `json:"message,omitempty"`
+	Icon        string     `json:"icon,omitempty"`
+	MonitorType string     `json:"monitorType,omitempty"`
 }
 
 type IncidentSummary struct {
-	ID                  string              `json:"id"`
-	MonitorName         string              `json:"monitorName"`
-	FiredAt             time.Time           `json:"firedAt"`
-	ResolvedAt          *time.Time          `json:"resolvedAt,omitempty"`
-	Status              Status              `json:"status"`
-	InvestigationStatus InvestigationStatus `json:"investigationStatus"`
+	ID          string     `json:"id"`
+	MonitorName string     `json:"monitorName"`
+	FiredAt     time.Time  `json:"firedAt"`
+	ResolvedAt  *time.Time `json:"resolvedAt,omitempty"`
+	Status      Status     `json:"status"`
 }
 
 type Index struct {
 	Incidents []IncidentSummary `json:"incidents"`
-}
-
-// ConvRole is the role in a Bedrock conversation.
-type ConvRole string
-
-const (
-	RoleUser      ConvRole = "user"
-	RoleAssistant ConvRole = "assistant"
-)
-
-// ConvBlock is one content block in a conversation message.
-type ConvBlock struct {
-	Type       string          `json:"type"`                  // "text" | "tool_use" | "tool_result"
-	Text       string          `json:"text,omitempty"`        // for text
-	ID         string          `json:"id,omitempty"`          // tool_use id / tool_result id
-	Name       string          `json:"name,omitempty"`        // tool name
-	Input      json.RawMessage `json:"input,omitempty"`       // tool_use input JSON
-	ToolResult string          `json:"toolResult,omitempty"`  // tool_result content
-	IsError    bool            `json:"isError,omitempty"`
-}
-
-// ConvMessage is one turn in the Bedrock conversation.
-type ConvMessage struct {
-	Role   ConvRole    `json:"role"`
-	Blocks []ConvBlock `json:"blocks"`
 }
 
 // NewID generates a unique incident ID from the monitor name and timestamp.
@@ -96,16 +59,17 @@ func NewID(monitorName string, t time.Time) string {
 // Summary returns an IncidentSummary for use in the index.
 func (inc *Incident) Summary() IncidentSummary {
 	return IncidentSummary{
-		ID:                  inc.ID,
-		MonitorName:         inc.MonitorName,
-		FiredAt:             inc.FiredAt,
-		ResolvedAt:          inc.ResolvedAt,
-		Status:              inc.Status,
-		InvestigationStatus: inc.InvestigationStatus,
+		ID:          inc.ID,
+		MonitorName: inc.MonitorName,
+		FiredAt:     inc.FiredAt,
+		ResolvedAt:  inc.ResolvedAt,
+		Status:      inc.Status,
 	}
 }
 
 // InitialMarkdown returns the starting markdown content for a new incident.
+// Investigations are performed externally (e.g. via the MCP server); the
+// incident log records the alarm details and the eventual resolution.
 func (inc *Incident) InitialMarkdown() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# Incident: %s\n\n", inc.MonitorName)
@@ -119,7 +83,5 @@ func (inc *Incident) InitialMarkdown() string {
 		fmt.Fprintf(&sb, "**Message:** %s  \n", inc.Message)
 	}
 	fmt.Fprintf(&sb, "**Status:** %s  \n", inc.Status)
-	fmt.Fprintf(&sb, "**Investigation:** %s  \n", inc.InvestigationStatus)
-	sb.WriteString("\n---\n\n## Investigation\n\n")
 	return sb.String()
 }

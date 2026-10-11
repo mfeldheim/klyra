@@ -1,8 +1,9 @@
-package investigate
+package diagnostics
 
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,7 +22,7 @@ func TestListPods(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.Content)
 	}
-	if !contains(result.Content, "web-abc") {
+	if !strings.Contains(result.Content, "web-abc") {
 		t.Errorf("expected pod name in result: %s", result.Content)
 	}
 }
@@ -35,7 +36,7 @@ func TestListNamespaces(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.Content)
 	}
-	if !contains(result.Content, "production") {
+	if !strings.Contains(result.Content, "production") {
 		t.Errorf("expected namespace in result: %s", result.Content)
 	}
 }
@@ -53,7 +54,7 @@ func TestListEvents(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.Content)
 	}
-	if !contains(result.Content, "OOMKilled") {
+	if !strings.Contains(result.Content, "OOMKilled") {
 		t.Errorf("expected event reason in result: %s", result.Content)
 	}
 }
@@ -72,20 +73,22 @@ func TestMetricsUnavailable(t *testing.T) {
 	if result.IsError {
 		t.Errorf("expected graceful unavailable, got error: %s", result.Content)
 	}
-	if !contains(result.Content, "not available") {
+	if !strings.Contains(result.Content, "not available") {
 		t.Errorf("expected 'not available' message: %s", result.Content)
 	}
 }
 
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsHelper(s, sub))
-}
-
-func containsHelper(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
+func TestDefinitionsShape(t *testing.T) {
+	defs := Definitions()
+	if len(defs) == 0 {
+		t.Fatal("expected at least one tool definition")
+	}
+	for _, d := range defs {
+		if d.Name == "" {
+			t.Error("tool with empty name")
+		}
+		if d.InputSchema == nil {
+			t.Errorf("tool %s has nil input schema", d.Name)
 		}
 	}
-	return false
 }

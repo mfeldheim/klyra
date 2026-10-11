@@ -32,18 +32,14 @@ func TestNewID(t *testing.T) {
 func TestInitialMarkdown(t *testing.T) {
 	firedAt := time.Date(2026, 5, 10, 14, 30, 0, 0, time.UTC)
 	inc := &Incident{
-		ID:                  "inc-test-20260510-143000-abcd1234",
-		MonitorName:         "test",
-		FiredAt:             firedAt,
-		Value:               "842ms",
-		Message:             "p99 above threshold",
-		Status:              StatusActive,
-		InvestigationStatus: InvPending,
+		ID:          "inc-test-20260510-143000-abcd1234",
+		MonitorName: "test",
+		FiredAt:     firedAt,
+		Value:       "842ms",
+		Message:     "p99 above threshold",
+		Status:      StatusActive,
 	}
 	md := inc.InitialMarkdown()
-	if !strings.Contains(md, "## Investigation") {
-		t.Error("expected Investigation section in markdown")
-	}
 	if !strings.Contains(md, inc.ID) {
 		t.Error("expected ID in markdown")
 	}
@@ -51,11 +47,10 @@ func TestInitialMarkdown(t *testing.T) {
 
 func TestSummary(t *testing.T) {
 	inc := &Incident{
-		ID:                  "inc-x",
-		MonitorName:         "x",
-		FiredAt:             time.Now(),
-		Status:              StatusActive,
-		InvestigationStatus: InvPending,
+		ID:          "inc-x",
+		MonitorName: "x",
+		FiredAt:     time.Now(),
+		Status:      StatusActive,
 	}
 	s := inc.Summary()
 	if s.ID != inc.ID || s.MonitorName != inc.MonitorName {

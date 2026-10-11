@@ -51,13 +51,12 @@ func TestWriteAndReadIncident(t *testing.T) {
 	ctx := context.Background()
 
 	inc := &Incident{
-		ID:                  "inc-test-20260510-143000-abcd1234",
-		MonitorName:         "api-latency",
-		FiredAt:             time.Now().UTC().Truncate(time.Second),
-		Status:              StatusActive,
-		InvestigationStatus: InvPending,
-		Value:               "842ms",
-		Message:             "p99 above threshold",
+		ID:          "inc-test-20260510-143000-abcd1234",
+		MonitorName: "api-latency",
+		FiredAt:     time.Now().UTC().Truncate(time.Second),
+		Status:      StatusActive,
+		Value:       "842ms",
+		Message:     "p99 above threshold",
 	}
 
 	if err := store.WriteIncident(ctx, inc); err != nil {
@@ -77,7 +76,7 @@ func TestAppendContent(t *testing.T) {
 	store, fs := newTestStore()
 	ctx := context.Background()
 
-	inc := &Incident{ID: "inc-x", MonitorName: "x", FiredAt: time.Now(), Status: StatusActive, InvestigationStatus: InvPending}
+	inc := &Incident{ID: "inc-x", MonitorName: "x", FiredAt: time.Now(), Status: StatusActive}
 	store.WriteIncident(ctx, inc)
 
 	store.AppendContent(ctx, inc.ID, "chunk1")
@@ -106,7 +105,7 @@ func TestListAndUpdateIndex(t *testing.T) {
 		t.Error("expected empty index")
 	}
 
-	sum := IncidentSummary{ID: "inc-1", MonitorName: "m1", FiredAt: time.Now(), Status: StatusActive, InvestigationStatus: InvPending}
+	sum := IncidentSummary{ID: "inc-1", MonitorName: "m1", FiredAt: time.Now(), Status: StatusActive}
 	store.UpdateIndex(ctx, sum)
 
 	idx, _ = store.ListIncidents(ctx)
@@ -114,11 +113,11 @@ func TestListAndUpdateIndex(t *testing.T) {
 		t.Errorf("expected 1 incident, got %+v", idx.Incidents)
 	}
 
-	// Update existing
-	sum.InvestigationStatus = InvComplete
+	// Update existing entry in place.
+	sum.MonitorName = "m1-updated"
 	store.UpdateIndex(ctx, sum)
 	idx, _ = store.ListIncidents(ctx)
-	if len(idx.Incidents) != 1 || idx.Incidents[0].InvestigationStatus != InvComplete {
-		t.Error("expected updated investigation status")
+	if len(idx.Incidents) != 1 || idx.Incidents[0].MonitorName != "m1-updated" {
+		t.Error("expected updated incident summary")
 	}
 }

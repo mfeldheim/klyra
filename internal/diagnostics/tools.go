@@ -1,4 +1,7 @@
-package investigate
+// Package diagnostics provides read-only Kubernetes inspection tools.
+// These tools are exposed to external agents (e.g. via the klyra MCP server)
+// so they can investigate incidents without direct cluster credentials.
+package diagnostics
 
 import (
 	"context"
@@ -18,11 +21,11 @@ type ToolResult struct {
 	IsError bool
 }
 
-// toolDef is the JSON schema definition sent to Bedrock.
-type toolDef struct {
-	Name        string
-	Description string
-	Schema      map[string]any
+// ToolDef is a tool definition in MCP JSON-schema shape.
+type ToolDef struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
 }
 
 // K8sTools executes read-only Kubernetes tool calls on behalf of the agent.
@@ -36,23 +39,23 @@ func NewK8sTools(client kubernetes.Interface, metricsClient metricsv.Interface) 
 	return &K8sTools{client: client, metrics: metricsClient}
 }
 
-// Definitions returns the tool schema list to pass to Bedrock.
-func Definitions() []toolDef {
+// Definitions returns the tool schema list.
+func Definitions() []ToolDef {
 	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	strOpt := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	boolOpt := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
 	intOpt := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
 
-	return []toolDef{
+	return []ToolDef{
 		{
 			Name:        "list_namespaces",
 			Description: "List all Kubernetes namespaces.",
-			Schema:      map[string]any{"type": "object", "properties": map[string]any{}},
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 		{
 			Name:        "list_pods",
 			Description: "List pods in a namespace with their status, restart count, node, and age.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace":      str("Kubernetes namespace"),
 				"label_selector": strOpt("Optional label selector, e.g. app=foo"),
 			}, "required": []string{"namespace"}},
@@ -60,7 +63,7 @@ func Definitions() []toolDef {
 		{
 			Name:        "describe_pod",
 			Description: "Get detailed info about a pod including spec, status, conditions, and recent events.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 				"name":      str("Pod name"),
 			}, "required": []string{"namespace", "name"}},
@@ -68,7 +71,7 @@ func Definitions() []toolDef {
 		{
 			Name:        "get_pod_logs",
 			Description: "Get the last N lines of logs from a pod container (max 200 lines).",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 				"name":      str("Pod name"),
 				"container": strOpt("Container name (defaults to first container)"),
@@ -79,7 +82,7 @@ func Definitions() []toolDef {
 		{
 			Name:        "list_events",
 			Description: "List events in a namespace, warnings first. Optionally filter by involved object name.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace":       str("Kubernetes namespace"),
 				"involved_object": strOpt("Filter by involved object name"),
 			}, "required": []string{"namespace"}},
@@ -87,14 +90,14 @@ func Definitions() []toolDef {
 		{
 			Name:        "list_deployments",
 			Description: "List deployments in a namespace with desired/ready/available replica counts.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 			}, "required": []string{"namespace"}},
 		},
 		{
 			Name:        "describe_deployment",
 			Description: "Get detailed info about a deployment including rollout status.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 				"name":      str("Deployment name"),
 			}, "required": []string{"namespace", "name"}},
@@ -102,7 +105,7 @@ func Definitions() []toolDef {
 		{
 			Name:        "list_replicasets",
 			Description: "List ReplicaSets in a namespace.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace":  str("Kubernetes namespace"),
 				"deployment": strOpt("Filter by owning deployment name"),
 			}, "required": []string{"namespace"}},
@@ -110,47 +113,47 @@ func Definitions() []toolDef {
 		{
 			Name:        "list_nodes",
 			Description: "List all nodes with status, roles, conditions, and taints.",
-			Schema:      map[string]any{"type": "object", "properties": map[string]any{}},
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 		{
 			Name:        "describe_node",
 			Description: "Get detailed info about a node including allocatable resources and conditions.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"name": str("Node name"),
 			}, "required": []string{"name"}},
 		},
 		{
 			Name:        "list_daemonsets",
 			Description: "List DaemonSets in a namespace.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 			}, "required": []string{"namespace"}},
 		},
 		{
 			Name:        "list_statefulsets",
 			Description: "List StatefulSets in a namespace.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 			}, "required": []string{"namespace"}},
 		},
 		{
 			Name:        "list_services",
 			Description: "List services in a namespace.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 			}, "required": []string{"namespace"}},
 		},
 		{
 			Name:        "list_hpa",
 			Description: "List HorizontalPodAutoscalers in a namespace with current/min/max replicas.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 			}, "required": []string{"namespace"}},
 		},
 		{
 			Name:        "get_pod_metrics",
 			Description: "Get current CPU and memory usage for a specific pod.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 				"name":      str("Pod name"),
 			}, "required": []string{"namespace", "name"}},
@@ -158,14 +161,14 @@ func Definitions() []toolDef {
 		{
 			Name:        "list_pod_metrics",
 			Description: "Get current CPU and memory usage for all pods in a namespace.",
-			Schema: map[string]any{"type": "object", "properties": map[string]any{
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace": str("Kubernetes namespace"),
 			}, "required": []string{"namespace"}},
 		},
 		{
 			Name:        "list_node_metrics",
 			Description: "Get current CPU and memory usage for all nodes.",
-			Schema:      map[string]any{"type": "object", "properties": map[string]any{}},
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 	}
 }

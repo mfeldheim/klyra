@@ -17,11 +17,6 @@ type IncidentsConfig struct {
 	S3Region string `yaml:"s3_region" json:"s3Region"`
 }
 
-type AIInvestigateConfig struct {
-	BedrockRegion string `yaml:"bedrock_region"`
-	Model         string `yaml:"model"`
-}
-
 type MonitorConfig struct {
 	Name      string          `yaml:"name"      json:"name"`
 	Type      string          `yaml:"type"      json:"type"`

@@ -60,18 +60,17 @@ func (s *Server) Handler() http.Handler {
 		}
 	})
 	mux.HandleFunc("/api/incidents/", func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		switch {
-		case strings.HasSuffix(path, "/stream") && r.Method == http.MethodGet:
-			s.handlers.StreamIncident(w, r)
-		case strings.HasSuffix(path, "/chat") && r.Method == http.MethodPost:
-			s.handlers.ChatIncident(w, r)
-		case r.Method == http.MethodGet:
+		if r.Method == http.MethodGet {
 			s.handlers.GetIncident(w, r)
-		default:
+		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+
+	// MCP server (Streamable HTTP) for external diagnostic tools.
+	if s.handlers.mcp != nil {
+		mux.Handle("/mcp", s.handlers.mcp)
+	}
 
 	if s.uiFS != nil {
 		fileServer := http.FileServer(http.FS(s.uiFS))
