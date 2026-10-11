@@ -168,6 +168,27 @@ func run(cmd *cobra.Command, args []string) error {
 	leader.Run(ctx, k8sClient, flagNamespace, flagLeaseName,
 		func(leaderCtx context.Context) {
 			isLeader.Store(true)
+			log.Println("leader: acquired lease")
+
+			// Refresh persisted alarm state before reconciling incidents: the
+			// state reader stops while we are leader, and the new leader must
+			// self-heal incidents orphaned by a restart/failover using the
+			// freshest state available.
+			if err := engine.LoadFromConfigMap(leaderCtx, st, k8sClient, flagNamespace, "klyra-state"); err != nil {
+				log.Printf("leader: reload state: %v", err)
+			}
+			if incMgr != nil {
+				if err := incMgr.Reconcile(leaderCtx, func(name string) (time.Time, bool) {
+					alarm, ok := st.GetAlarm(name)
+					if !ok || alarm.Status != state.AlarmFiring || alarm.FiredAt == nil {
+						return time.Time{}, false
+					}
+					return *alarm.FiredAt, true
+				}); err != nil {
+					log.Printf("leader: incident reconcile: %v", err)
+				}
+			}
+
 			log.Println("leader: starting engine")
 			if err := eng.Run(leaderCtx); err != nil {
 				log.Printf("engine error: %v", err)
