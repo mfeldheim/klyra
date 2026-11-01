@@ -22,13 +22,13 @@ func init() {
 }
 
 type httpMonitor struct {
-	name       string
-	url        string
-	method     string
-	client     *http.Client
-	headers    map[string]string
-	checks     []httpCheck
-	hasChecks  bool
+	name      string
+	url       string
+	method    string
+	client    *http.Client
+	headers   map[string]string
+	checks    []httpCheck
+	hasChecks bool
 }
 
 type expression struct {
@@ -86,7 +86,14 @@ func New(name string, cfg map[string]any) (monitor.Monitor, error) {
 		}
 	}
 
-	client := &http.Client{Timeout: timeout}
+	// Own transport without keep-alive: every check dials a new connection,
+	// like a first-time visitor. With the shared DefaultTransport a pooled
+	// HTTP/2 connection that died behind a NAT failover stays in use, and every
+	// check against that host times out until the kernel gives up on it
+	// (tcp_retries2, about 15 minutes).
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableKeepAlives = true
+	client := &http.Client{Timeout: timeout, Transport: transport}
 
 	checks := make([]httpCheck, 0, 6)
 	_, hasStatusExpression := cfg["status"]

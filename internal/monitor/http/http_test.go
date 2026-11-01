@@ -2,9 +2,11 @@ package httpmon_test
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,6 +41,41 @@ func TestHTTPMonitorOK(t *testing.T) {
 	}
 	if r.Value != true {
 		t.Errorf("expected value true, got %v", r.Value)
+	}
+}
+
+// Every check must dial a new connection. A reused keep-alive connection that
+// died behind a NAT failover would otherwise fail every check until the kernel
+// gives up on it (tcp_retries2, about 15 minutes).
+func TestHTTPMonitorUsesFreshConnectionPerCheck(t *testing.T) {
+	var dials atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			dials.Add(1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	m, err := httpmon.New("test", map[string]any{"url": srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		r, err := m.Check(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Value != true {
+			t.Fatalf("check %d: expected value true, got %v: %s", i, r.Value, r.Message)
+		}
+	}
+	if got := dials.Load(); got != 3 {
+		t.Errorf("expected 3 connections for 3 checks, got %d", got)
 	}
 }
 
