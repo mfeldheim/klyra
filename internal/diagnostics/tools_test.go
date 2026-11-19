@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -83,6 +84,47 @@ func TestListEvents(t *testing.T) {
 	}
 	if !strings.Contains(result.Content, "OOMKilled") {
 		t.Errorf("expected event reason in result: %s", result.Content)
+	}
+}
+
+// TestListEventsShowsTimestamps guards the event timestamp: newer clients only
+// set eventTime/series (firstTimestamp and lastTimestamp stay empty), and
+// without a time column incidents cannot be correlated with events.
+func TestListEventsShowsTimestamps(t *testing.T) {
+	older := time.Date(2026, 11, 18, 13, 50, 0, 0, time.UTC)
+	newer := time.Date(2026, 11, 18, 21, 41, 0, 0, time.UTC)
+	client := fake.NewSimpleClientset(
+		&corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: "old", Namespace: "keda"},
+			Type:           corev1.EventTypeWarning,
+			Reason:         "OldReason",
+			LastTimestamp:  metav1.NewTime(older),
+			Count:          3,
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "a"},
+		},
+		&corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{Name: "new", Namespace: "keda"},
+			Type:       corev1.EventTypeWarning,
+			Reason:     "NewReason",
+			EventTime:  metav1.NewMicroTime(newer.Add(-time.Minute)),
+			Series: &corev1.EventSeries{
+				Count:            7,
+				LastObservedTime: metav1.NewMicroTime(newer),
+			},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "b"},
+		},
+	)
+	result := NewK8sTools(client, nil).Execute(context.Background(), "list_events", json.RawMessage(`{"namespace":"keda"}`))
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content)
+	}
+	for _, want := range []string{"LAST SEEN", "2026-11-18T13:50:00Z", "2026-11-18T21:41:00Z", "7"} {
+		if !strings.Contains(result.Content, want) {
+			t.Errorf("expected %q in result:\n%s", want, result.Content)
+		}
+	}
+	if strings.Index(result.Content, "NewReason") > strings.Index(result.Content, "OldReason") {
+		t.Errorf("expected newest event first:\n%s", result.Content)
 	}
 }
 

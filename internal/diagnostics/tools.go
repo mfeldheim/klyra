@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,7 +83,7 @@ func Definitions() []ToolDef {
 		},
 		{
 			Name:        "list_events",
-			Description: "List events in a namespace, warnings first. Optionally filter by involved object name.",
+			Description: "List events in a namespace with last-seen time (UTC) and count, warnings first, newest first. Optionally filter by involved object name.",
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"namespace":       str("Kubernetes namespace"),
 				"involved_object": strOpt("Filter by involved object name"),
@@ -343,27 +345,59 @@ func (t *K8sTools) listEvents(ctx context.Context, namespace, involvedObject str
 	if err != nil {
 		return errResult(err)
 	}
-	// Sort: warnings first
-	var warnings, normals []corev1.Event
-	for _, e := range list.Items {
-		if e.Type == corev1.EventTypeWarning {
-			warnings = append(warnings, e)
-		} else {
-			normals = append(normals, e)
+	// Sort: warnings first, newest first within each type.
+	events := list.Items
+	sort.SliceStable(events, func(i, j int) bool {
+		wi := events[i].Type == corev1.EventTypeWarning
+		wj := events[j].Type == corev1.EventTypeWarning
+		if wi != wj {
+			return wi
 		}
-	}
-	events := append(warnings, normals...)
+		return eventLastSeen(events[i]).After(eventLastSeen(events[j]))
+	})
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%-8s %-40s %-25s %s\n", "TYPE", "OBJECT", "REASON", "MESSAGE")
+	fmt.Fprintf(&sb, "%-20s %-5s %-8s %-40s %-25s %s\n", "LAST SEEN (UTC)", "COUNT", "TYPE", "OBJECT", "REASON", "MESSAGE")
 	for _, e := range events {
 		obj := fmt.Sprintf("%s/%s", e.InvolvedObject.Kind, e.InvolvedObject.Name)
 		msg := e.Message
 		if len(msg) > 80 {
 			msg = msg[:80] + "..."
 		}
-		fmt.Fprintf(&sb, "%-8s %-40s %-25s %s\n", e.Type, obj, e.Reason, msg)
+		seen := "-"
+		if ts := eventLastSeen(e); !ts.IsZero() {
+			seen = ts.UTC().Format(time.RFC3339)
+		}
+		fmt.Fprintf(&sb, "%-20s %-5d %-8s %-40s %-25s %s\n", seen, eventCount(e), e.Type, obj, e.Reason, msg)
 	}
 	return ok(sb.String())
+}
+
+// eventLastSeen returns when an event was last observed. core/v1 events written
+// by events.k8s.io clients leave firstTimestamp/lastTimestamp empty and use
+// eventTime plus series instead, so check every field in order of precision.
+func eventLastSeen(e corev1.Event) time.Time {
+	switch {
+	case e.Series != nil && !e.Series.LastObservedTime.IsZero():
+		return e.Series.LastObservedTime.Time
+	case !e.LastTimestamp.IsZero():
+		return e.LastTimestamp.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	case !e.FirstTimestamp.IsZero():
+		return e.FirstTimestamp.Time
+	}
+	return e.CreationTimestamp.Time
+}
+
+// eventCount returns how often an event occurred, at least 1.
+func eventCount(e corev1.Event) int32 {
+	if e.Series != nil && e.Series.Count > 0 {
+		return e.Series.Count
+	}
+	if e.Count > 0 {
+		return e.Count
+	}
+	return 1
 }
 
 func (t *K8sTools) listDeployments(ctx context.Context, namespace string) ToolResult {
