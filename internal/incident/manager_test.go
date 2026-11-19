@@ -2,6 +2,7 @@ package incident
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,6 +228,15 @@ func TestManagerReconcile(t *testing.T) {
 	}
 	if gotStale.Status != StatusResolved {
 		t.Errorf("recovered monitor incident status = %q, want %q", gotStale.Status, StatusResolved)
+	}
+	// The resolve time is only the takeover time; the log must say so instead
+	// of presenting it as the real recovery time.
+	content, err := store.ReadContent(ctx, staleInc.ID)
+	if err != nil {
+		t.Fatalf("ReadContent stale: %v", err)
+	}
+	if !strings.Contains(content, "actual recovery time unknown") {
+		t.Errorf("expected reconcile note in incident log:\n%s", content)
 	}
 
 	// Old episode of a still-firing monitor must be closed too.

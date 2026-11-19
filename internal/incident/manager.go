@@ -216,7 +216,14 @@ func (m *Manager) Reconcile(ctx context.Context, firingSince func(monitorName st
 			continue
 		}
 		// Orphaned episode: monitor recovered, or the incident predates the
-		// current firing episode. Close it.
+		// current firing episode. Close it, and say that the resolve time is
+		// the takeover time: the RESOLVED transition was missed, so the real
+		// recovery time is unknown and the duration is an upper bound.
+		note := fmt.Sprintf("\n> Closed by incident reconcile at leader takeover (%s); "+
+			"actual recovery time unknown, duration below is an upper bound.\n", now.Format(time.RFC3339))
+		if err := m.store.AppendContent(ctx, inc.ID, note); err != nil {
+			log.Printf("manager.Reconcile: append note %s: %v", inc.ID, err)
+		}
 		m.persistResolution(ctx, inc, now)
 	}
 	return nil
