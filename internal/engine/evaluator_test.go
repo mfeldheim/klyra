@@ -282,3 +282,51 @@ func TestResolvedEventCarriesTransitionTime(t *testing.T) {
 		t.Errorf("IncidentID = %q, want %q", ev.IncidentID, incID)
 	}
 }
+
+// TestFiringStaysFiringWhenRefiringDuringRecoveryWithFor reproduces a silent
+// FIRING→OK drop: with both for and recovery_for set, a good check clears
+// PendingSince, and a bad check inside the recovery window then took the
+// "pending" branch and set the alarm OK without a RESOLVED event, orphaning
+// the incident until the next leader reconcile.
+func TestFiringStaysFiringWhenRefiringDuringRecoveryWithFor(t *testing.T) {
+	st := state.NewStore()
+	base := time.Date(2026, 11, 18, 21, 40, 0, 0, time.UTC)
+	firedAt := base
+	incID := "inc-test-1"
+	st.SetAlarm(state.AlarmState{
+		MonitorName: "test",
+		Status:      state.AlarmFiring,
+		FiredAt:     &firedAt,
+		IncidentID:  &incID,
+	})
+	thr := config.ThresholdConfig{
+		Operator:    "eq",
+		Value:       false,
+		For:         config.Duration{Duration: 30 * time.Second},
+		RecoveryFor: config.Duration{Duration: 60 * time.Second},
+	}
+	apply := func(v bool, at time.Time) *state.AlarmEvent {
+		return engine.ApplyResult(st, thr, state.CheckResult{MonitorName: "test", Status: state.CheckOK, Value: v, Timestamp: at})
+	}
+
+	if ev := apply(true, base.Add(30*time.Second)); ev != nil {
+		t.Fatalf("good check inside recovery window: unexpected event %v", ev)
+	}
+	if ev := apply(false, base.Add(60*time.Second)); ev != nil {
+		t.Fatalf("bad check while firing: unexpected event %v", ev)
+	}
+	alarm, _ := st.GetAlarm("test")
+	if alarm.Status != state.AlarmFiring {
+		t.Fatalf("expected alarm to stay FIRING, got %v", alarm.Status)
+	}
+
+	// Sustained recovery must now produce a proper RESOLVED event.
+	apply(true, base.Add(90*time.Second))
+	ev := apply(true, base.Add(150*time.Second))
+	if ev == nil || ev.Transition != state.TransitionResolved {
+		t.Fatalf("expected RESOLVED after sustained recovery, got %v", ev)
+	}
+	if ev.IncidentID != incID {
+		t.Errorf("IncidentID = %q, want %q", ev.IncidentID, incID)
+	}
+}

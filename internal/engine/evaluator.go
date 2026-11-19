@@ -107,7 +107,11 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 		if updated.PendingSince == nil {
 			updated.PendingSince = &now
 		}
-		if forDur == 0 || now.Sub(*updated.PendingSince) >= forDur {
+		// An already firing alarm stays firing: the for-duration only gates the
+		// initial fire. PendingSince is cleared by good checks in the recovery
+		// window, so without this guard a bad check there fell into the pending
+		// branch below and silently dropped FIRING→OK with no RESOLVED event.
+		if current.Status == state.AlarmFiring || forDur == 0 || now.Sub(*updated.PendingSince) >= forDur {
 			if current.Status != state.AlarmFiring {
 				updated.Status = state.AlarmFiring
 				updated.FiredAt = &now
