@@ -177,6 +177,12 @@ func run(cmd *cobra.Command, args []string) error {
 			if err := engine.LoadFromConfigMap(leaderCtx, st, k8sClient, flagNamespace, "klyra-state"); err != nil {
 				log.Printf("leader: reload state: %v", err)
 			}
+			// Clear fire state stranded on non-firing alarms before reconciling,
+			// so their orphaned incidents are closed and the history ends on
+			// RESOLVED instead of a dangling FIRING.
+			if repaired := engine.RepairStaleFiring(st, time.Now().UTC()); len(repaired) > 0 {
+				log.Printf("leader: repaired stale fire state: %v", repaired)
+			}
 			if incMgr != nil {
 				if err := incMgr.Reconcile(leaderCtx, func(name string) (time.Time, bool) {
 					alarm, ok := st.GetAlarm(name)
