@@ -251,3 +251,34 @@ func TestRecoveryWindowResetOnRefiring(t *testing.T) {
 		t.Error("expected RecoverySince to be cleared when threshold is met again")
 	}
 }
+
+// TestResolvedEventCarriesTransitionTime checks that a RESOLVED event keeps the
+// original fire time in FiredAt and carries the resolve time in At.
+func TestResolvedEventCarriesTransitionTime(t *testing.T) {
+	st := state.NewStore()
+	firedAt := time.Date(2026, 11, 18, 13, 51, 4, 0, time.UTC)
+	incID := "inc-test-1"
+	st.SetAlarm(state.AlarmState{
+		MonitorName: "test",
+		Status:      state.AlarmFiring,
+		FiredAt:     &firedAt,
+		IncidentID:  &incID,
+	})
+	thr := config.ThresholdConfig{Operator: "lt", Value: float64(2)}
+	checkAt := firedAt.Add(2 * time.Minute)
+	result := state.CheckResult{MonitorName: "test", Status: state.CheckOK, Value: float64(5), Timestamp: checkAt}
+
+	ev := engine.ApplyResult(st, thr, result)
+	if ev == nil || ev.Transition != state.TransitionResolved {
+		t.Fatalf("expected RESOLVED event, got %v", ev)
+	}
+	if !ev.FiredAt.Equal(firedAt) {
+		t.Errorf("FiredAt = %v, want %v", ev.FiredAt, firedAt)
+	}
+	if !ev.At.Equal(checkAt) {
+		t.Errorf("At = %v, want %v", ev.At, checkAt)
+	}
+	if ev.IncidentID != incID {
+		t.Errorf("IncidentID = %q, want %q", ev.IncidentID, incID)
+	}
+}

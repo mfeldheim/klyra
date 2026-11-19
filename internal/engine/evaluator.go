@@ -117,6 +117,7 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 					Message:     r.Message,
 					Value:       r.Value,
 					FiredAt:     now,
+					At:          now,
 				}
 			} else {
 				updated.Status = state.AlarmFiring
@@ -145,6 +146,8 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 					Message:     r.Message,
 					Value:       r.Value,
 					FiredAt:     origFiredAt,
+					At:          now,
+					IncidentID:  derefString(current.IncidentID),
 				}
 			} else {
 				// Recovery hysteresis: require recovery_for duration of good checks
@@ -166,6 +169,8 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 						Message:     r.Message,
 						Value:       r.Value,
 						FiredAt:     origFiredAt,
+						At:          now,
+						IncidentID:  derefString(current.IncidentID),
 					}
 				} else {
 					// Still in recovery window — stay FIRING
@@ -181,4 +186,11 @@ func ApplyResult(st *state.Store, thr config.ThresholdConfig, r state.CheckResul
 	st.SetAlarm(updated)
 
 	return event
+}
+
+func derefString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

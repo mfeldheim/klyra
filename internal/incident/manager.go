@@ -61,7 +61,11 @@ func (m *Manager) OnResolved(ctx context.Context, ev state.AlarmEvent) error {
 	if inc == nil {
 		return nil
 	}
-	return m.close(ctx, inc, time.Now().UTC())
+	resolvedAt := ev.At
+	if resolvedAt.IsZero() {
+		resolvedAt = time.Now()
+	}
+	return m.close(ctx, inc, resolvedAt.UTC())
 }
 
 // takeActive removes and returns the open incident for a monitor. It prefers the

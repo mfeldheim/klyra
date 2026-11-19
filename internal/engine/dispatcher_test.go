@@ -98,3 +98,34 @@ func TestDispatcherContinuesOnFireError(t *testing.T) {
 		t.Errorf("expected ok action to fire despite error, got %d", len(okA.fired))
 	}
 }
+
+// TestDispatcherRecordsTransitionTime guards against recording a RESOLVED
+// history event at the original fire time: the history must show when the
+// transition happened and which incident it closed.
+func TestDispatcherRecordsTransitionTime(t *testing.T) {
+	st := state.NewStore()
+	firedAt := time.Date(2026, 11, 18, 13, 51, 4, 0, time.UTC)
+	resolvedAt := firedAt.Add(2 * time.Minute)
+	incID := "inc-test-1"
+	st.SetAlarm(state.AlarmState{MonitorName: "test", Status: state.AlarmOK, IncidentID: &incID})
+
+	d := engine.NewDispatcher(st, nil, nil, nil)
+	d.Dispatch(context.Background(), state.AlarmEvent{
+		MonitorName: "test",
+		Transition:  state.TransitionResolved,
+		FiredAt:     firedAt,
+		At:          resolvedAt,
+		IncidentID:  incID,
+	})
+
+	h := st.History()
+	if len(h) != 1 {
+		t.Fatalf("expected 1 history event, got %d", len(h))
+	}
+	if !h[0].At.Equal(resolvedAt) {
+		t.Errorf("history At = %v, want resolve time %v", h[0].At, resolvedAt)
+	}
+	if h[0].IncidentID != incID {
+		t.Errorf("history IncidentID = %q, want %q", h[0].IncidentID, incID)
+	}
+}

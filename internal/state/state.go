@@ -63,10 +63,15 @@ type AlarmEvent struct {
 	Transition  Transition
 	Message     string
 	Value       any
-	FiredAt     time.Time
-	Icon        string
-	Priority    *int
-	IncidentID  string
+	// FiredAt is when the alarm started firing; RESOLVED events keep the
+	// original fire time so actions can report the outage duration.
+	FiredAt time.Time
+	// At is when this transition happened (fire time for FIRING, recovery
+	// time for RESOLVED). Zero means unknown; consumers fall back to FiredAt.
+	At         time.Time
+	Icon       string
+	Priority   *int
+	IncidentID string
 }
 
 type Silence struct {

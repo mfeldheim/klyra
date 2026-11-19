@@ -14,7 +14,7 @@ type Dispatcher struct {
 	store          *state.Store
 	actions        map[string]action.Action
 	monitorActions map[string][]string // monitorName → []actionName
-	incMgr         *incident.Manager  // nil if incidents not configured
+	incMgr         *incident.Manager   // nil if incidents not configured
 }
 
 // NewDispatcher creates a new Dispatcher. incMgr may be nil.
@@ -61,11 +61,16 @@ func (d *Dispatcher) Dispatch(ctx context.Context, ev state.AlarmEvent) {
 		}
 	}
 
-	// Record the transition in history now that IncidentID is known.
+	// Record the transition in history now that IncidentID is known. Use the
+	// transition time: FiredAt on a RESOLVED event is the original fire time.
+	at := ev.At
+	if at.IsZero() {
+		at = ev.FiredAt
+	}
 	d.store.AppendHistory(state.HistoryEvent{
 		MonitorName: ev.MonitorName,
 		Transition:  ev.Transition,
-		At:          ev.FiredAt,
+		At:          at,
 		Message:     ev.Message,
 		IncidentID:  ev.IncidentID,
 	})
