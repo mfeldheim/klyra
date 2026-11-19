@@ -5,5 +5,8 @@ metadata:
   namespace: {{ include "klyra.namespace" . }}
   annotations:
     argocd.argoproj.io/compare-options: IgnoreExtraneous
-data:
-  state.json: "{}"
+# No data on purpose: klyra writes state.json at runtime and owns that field.
+# Rendering state.json: "{}" here made every ArgoCD server-side-apply sync
+# reset the persisted alarms, history and silences (ignoreDifferences only
+# affects the diff, not what a sync applies). klyra treats a missing key as
+# empty state.
