@@ -41,6 +41,33 @@ func TestListNamespaces(t *testing.T) {
 	}
 }
 
+func TestListNodesShowsVersions(t *testing.T) {
+	client := fake.NewSimpleClientset(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "ip-10-2-0-1"},
+		Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{
+			OSImage:                 "Bottlerocket OS 1.68.1 (aws-k8s-1.37)",
+			KernelVersion:           "6.18.1",
+			ContainerRuntimeVersion: "containerd://2.3.2",
+			KubeletVersion:          "v1.37.2",
+		}},
+	})
+	tools := NewK8sTools(client, nil)
+	for _, call := range []struct{ name, args string }{
+		{"list_nodes", `{}`},
+		{"describe_node", `{"name":"ip-10-2-0-1"}`},
+	} {
+		result := tools.Execute(context.Background(), call.name, json.RawMessage(call.args))
+		if result.IsError {
+			t.Fatalf("%s: unexpected error: %s", call.name, result.Content)
+		}
+		for _, want := range []string{"Bottlerocket OS 1.68.1", "6.18.1", "containerd://2.3.2"} {
+			if !strings.Contains(result.Content, want) {
+				t.Errorf("%s: expected %q in result: %s", call.name, want, result.Content)
+			}
+		}
+	}
+}
+
 func TestListEvents(t *testing.T) {
 	client := fake.NewSimpleClientset(&corev1.Event{
 		ObjectMeta:     metav1.ObjectMeta{Name: "e1", Namespace: "default"},

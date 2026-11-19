@@ -112,7 +112,7 @@ func Definitions() []ToolDef {
 		},
 		{
 			Name:        "list_nodes",
-			Description: "List all nodes with status, roles, conditions, and taints.",
+			Description: "List all nodes with Ready status, OS image, kernel, container runtime and kubelet version.",
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 		{
@@ -431,7 +431,10 @@ func (t *K8sTools) listNodes(ctx context.Context) ToolResult {
 				ready = string(c.Status)
 			}
 		}
-		fmt.Fprintf(&sb, "%s: Ready=%s\n", n.Name, ready)
+		info := n.Status.NodeInfo
+		fmt.Fprintf(&sb, "%s: Ready=%s os=%q kernel=%s runtime=%s kubelet=%s\n",
+			n.Name, ready, info.OSImage, info.KernelVersion,
+			info.ContainerRuntimeVersion, info.KubeletVersion)
 	}
 	return ok(sb.String())
 }
@@ -443,6 +446,10 @@ func (t *K8sTools) describeNode(ctx context.Context, name string) ToolResult {
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Name: %s\n", n.Name)
+	info := n.Status.NodeInfo
+	fmt.Fprintf(&sb, "OS image: %s\nKernel: %s\nContainer runtime: %s\nKubelet: %s\nArchitecture: %s\n",
+		info.OSImage, info.KernelVersion, info.ContainerRuntimeVersion,
+		info.KubeletVersion, info.Architecture)
 	sb.WriteString("Allocatable:\n")
 	for k, v := range n.Status.Allocatable {
 		fmt.Fprintf(&sb, "  %s: %s\n", k, v.String())
